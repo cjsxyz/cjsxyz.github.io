@@ -1,0 +1,135 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no">
+<title>Chris Shu</title>
+<link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><circle cx='50' cy='50' r='50' fill='%23000'/></svg>">
+<style>
+*{margin:0;padding:0}
+html,body{height:100%;background:#0a0a0a;overflow:hidden}
+.vh{position:absolute;width:1px;height:1px;margin:-1px;overflow:hidden;clip:rect(0,0,0,0)}
+body::before{content:'';position:fixed;inset:0;opacity:.08;pointer-events:none;z-index:1;mix-blend-mode:overlay;background:url("data:image/svg+xml,%3Csvg viewBox='0 0 512 512' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='g'%3E%3CfeTurbulence baseFrequency='.7' numOctaves='5' seed='15'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23g)'/%3E%3C/svg%3E")}
+canvas{position:fixed;inset:0}
+main{position:fixed;bottom:40px;left:50px;color:rgba(255,255,255,.75);font:14px/1.8 system-ui,sans-serif;z-index:10;-webkit-font-smoothing:antialiased;letter-spacing:.01em}
+a{color:inherit}
+a:hover{color:#fff}
+@media(max-width:600px){main{left:34px;bottom:30px;font-size:12px}}
+</style>
+</head>
+<body>
+<main aria-label="Contact information">
+<h1 class="vh">Chris Shu - Talent at Paradigm</h1>
+<div>Chris Shu</div>
+<div>Talent things at <a href="https://www.paradigm.xyz/">Paradigm</a></div>
+<div><a href="mailto:chris@paradigm.xyz">Contact</a> <a href="https://www.linkedin.com/in/shu/">LinkedIn</a> <a href="https://x.com/cjsxyz">X</a></div>
+<div id="t"></div>
+</main>
+<canvas id="c" aria-hidden="true"></canvas>
+<script>
+const c=document.getElementById('c'),x=c.getContext('2d');
+let w,h,cx,cy,t=0,amp=0,ampTarget=0,dragX=0,dragY=0,isDrag=!1,lastX=0,lastY=0,velX=0,velY=0;
+const LAT=14,LON=20,RES=48,PI=Math.PI,TAU=PI*2,sin=Math.sin,cos=Math.cos;
+
+// Pre-computed permutation with gradient index (perm[i]%12)*3 baked in
+const perm=new Uint16Array(512),grad=new Uint8Array(512);
+const P=[151,160,137,91,90,15,131,13,201,95,96,53,194,233,7,225,140,36,103,30,69,142,8,99,37,240,21,10,23,190,6,148,247,120,234,75,0,26,197,62,94,252,219,203,117,35,11,32,57,177,33,88,237,149,56,87,174,20,125,136,171,168,68,175,74,165,71,134,139,48,27,166,77,146,158,231,83,111,229,122,60,211,133,230,220,105,92,41,55,46,245,40,244,102,143,54,65,25,63,161,1,216,80,73,209,76,132,187,208,89,18,169,200,196,135,130,116,188,159,86,164,100,109,198,173,186,3,64,52,217,226,250,124,123,5,202,38,147,118,126,255,82,85,212,207,206,59,227,47,16,58,17,182,189,28,42,223,183,170,213,119,248,152,2,44,154,163,70,221,153,101,155,167,43,172,9,129,22,39,253,19,98,108,110,79,113,224,232,178,185,112,104,218,246,97,228,251,34,242,193,238,210,144,12,191,179,162,241,81,51,145,235,249,14,239,107,49,192,214,31,181,199,106,157,184,84,204,176,115,121,50,45,127,4,150,254,138,236,205,93,222,114,67,29,24,72,243,141,128,195,78,66,215,61,156,180];
+for(let i=0;i<512;i++){perm[i]=P[i&255];grad[i]=(P[i&255]%12)*3}
+const G=new Int8Array([1,1,0,-1,1,0,1,-1,0,-1,-1,0,1,0,1,-1,0,1,1,0,-1,-1,0,-1,0,1,1,0,-1,1,0,1,-1,0,-1,-1]);
+
+// Pre-allocate all buffers
+const totalLines=LAT-1+LON,ptsPerLine=RES+1,totalPts=totalLines*ptsPerLine,stride=ptsPerLine*3;
+const lineData=new Float32Array(totalPts*3);
+const lineZ=new Float32Array(totalLines);
+const lineIdx=new Uint8Array(totalLines);
+
+// Pre-compute trig lookup tables
+const latSin=new Float32Array(LAT-1),latCos=new Float32Array(LAT-1);
+for(let i=1;i<LAT;i++){const p=(i/LAT)*PI;latSin[i-1]=sin(p);latCos[i-1]=cos(p)}
+const lonSin=new Float32Array(LON),lonCos=new Float32Array(LON);
+for(let j=0;j<LON;j++){const t=(j/LON)*TAU;lonSin[j]=sin(t);lonCos[j]=cos(t)}
+const resSinPhi=new Float32Array(ptsPerLine),resCosPhi=new Float32Array(ptsPerLine);
+const resSinTheta=new Float32Array(ptsPerLine),resCosTheta=new Float32Array(ptsPerLine);
+for(let k=0;k<ptsPerLine;k++){const f=k/RES;resSinPhi[k]=sin(f*PI);resCosPhi[k]=cos(f*PI);resSinTheta[k]=sin(f*TAU);resCosTheta[k]=cos(f*TAU)}
+
+// Pre-compute color LUT (100 levels)
+const colors=new Array(100);
+for(let i=0;i<100;i++){const a=i/99,v=50+a*50|0,o=(.08+a*.55).toFixed(2);colors[i]=`rgba(${v},${v},${v},${o})`}
+
+// Inline noise - no function calls inside
+function noise(px,py,pz){
+const xi=px<0?px-1|0:px|0,yi=py<0?py-1|0:py|0,zi=pz<0?pz-1|0:pz|0,X=xi&255,Y=yi&255,Z=zi&255;
+const fx=px-xi,fy=py-yi,fz=pz-zi;
+const u=fx*fx*fx*(fx*(fx*6-15)+10),v=fy*fy*fy*(fy*(fy*6-15)+10),ww=fz*fz*fz*(fz*(fz*6-15)+10);
+const A=perm[X]+Y,B=perm[X+1]+Y,AA=perm[A]+Z,AB=perm[A+1]+Z,BA=perm[B]+Z,BB=perm[B+1]+Z;
+const gAA=grad[AA],gBA=grad[BA],gAB=grad[AB],gBB=grad[BB],gAA1=grad[AA+1],gBA1=grad[BA+1],gAB1=grad[AB+1],gBB1=grad[BB+1];
+const aaa=G[gAA]*fx+G[gAA+1]*fy+G[gAA+2]*fz,baa=G[gBA]*(fx-1)+G[gBA+1]*fy+G[gBA+2]*fz;
+const aba=G[gAB]*fx+G[gAB+1]*(fy-1)+G[gAB+2]*fz,bba=G[gBB]*(fx-1)+G[gBB+1]*(fy-1)+G[gBB+2]*fz;
+const aab=G[gAA1]*fx+G[gAA1+1]*fy+G[gAA1+2]*(fz-1),bab=G[gBA1]*(fx-1)+G[gBA1+1]*fy+G[gBA1+2]*(fz-1);
+const abb=G[gAB1]*fx+G[gAB1+1]*(fy-1)+G[gAB1+2]*(fz-1),bbb=G[gBB1]*(fx-1)+G[gBB1+1]*(fy-1)+G[gBB1+2]*(fz-1);
+const la=aaa+u*(baa-aaa),lb=aba+u*(bba-aba),lc=aab+u*(bab-aab),ld=abb+u*(bbb-abb);
+return la+v*(lb-la)+ww*(lc+v*(ld-lc)-la-v*(lb-la))}
+
+// Insertion sort - fast for small, nearly-sorted arrays
+function sortIdx(){for(let i=1;i<totalLines;i++){const k=lineIdx[i],kz=lineZ[k];let j=i-1;while(j>=0&&lineZ[lineIdx[j]]>kz){lineIdx[j+1]=lineIdx[j];j--}lineIdx[j+1]=k}}
+
+function z(){const d=devicePixelRatio||1;w=innerWidth;h=innerHeight;c.width=w*d;c.height=h*d;c.style.width=w+'px';c.style.height=h+'px';x.scale(d,d);cx=w*.5;cy=h*.45}
+
+function draw(){
+x.fillStyle='#0a0a0a';x.fillRect(0,0,w,h);
+if(!isDrag){velX*=.96;velY*=.96;dragX+=velX;dragY+=velY}
+amp+=(ampTarget-amp)*.08;
+const rX=t*.18+dragY,rY=t*.324+dragX,cRX=cos(rX),sRX=sin(rX),cRY=cos(rY),sRY=sin(rY);
+const baseR=w<h?w*.28:h*.28,t27=t*.27,t216=t*.216,t324=t*.324,invPts=1/ptsPerLine,useNoise=amp>.001;
+let li=0,off=0;
+
+// Latitude lines
+for(let i=0;i<LAT-1;i++){
+const sP=latSin[i],cP=latCos[i];let zSum=0;
+for(let j=0;j<ptsPerLine;j++){
+const sT=resCosTheta[j],cT=resSinTheta[j];
+let sx=sP*cT,sy=cP,sz=sP*sT;
+const r=useNoise?baseR*(1+noise(sx*1.2+t27,sy*1.2+t216,sz*1.2+t324)*amp):baseR;
+sx*=r;sy*=r;sz*=r;
+const y1=sy*cRX-sz*sRX,z1=sy*sRX+sz*cRX,x1=sx*cRY+z1*sRY,z2=z1*cRY-sx*sRY;
+const sc=500/(500+z2);
+lineData[off++]=cx+x1*sc;lineData[off++]=cy+y1*sc;lineData[off++]=z2;zSum+=z2}
+lineZ[li]=zSum*invPts;lineIdx[li]=li;li++}
+
+// Longitude lines  
+for(let j=0;j<LON;j++){
+const sT=lonSin[j],cT=lonCos[j];let zSum=0;
+for(let i=0;i<ptsPerLine;i++){
+const sP=resSinPhi[i],cP=resCosPhi[i];
+let sx=sP*cT,sy=cP,sz=sP*sT;
+const r=useNoise?baseR*(1+noise(sx*1.2+t27,sy*1.2+t216,sz*1.2+t324)*amp):baseR;
+sx*=r;sy*=r;sz*=r;
+const y1=sy*cRX-sz*sRX,z1=sy*sRX+sz*cRX,x1=sx*cRY+z1*sRY,z2=z1*cRY-sx*sRY;
+const sc=500/(500+z2);
+lineData[off++]=cx+x1*sc;lineData[off++]=cy+y1*sc;lineData[off++]=z2;zSum+=z2}
+lineZ[li]=zSum*invPts;lineIdx[li]=li;li++}
+
+sortIdx();
+
+// Draw lines
+for(let i=0;i<totalLines;i++){
+const idx=lineIdx[i],base=idx*stride;
+x.beginPath();x.moveTo(lineData[base],lineData[base+1]);
+for(let j=1;j<ptsPerLine;j++){const o=base+j*3;x.lineTo(lineData[o],lineData[o+1])}
+const az=lineZ[idx],a=az<-280?0:az>280?1:(az+280)*.00178571;
+x.strokeStyle=colors[a*99+.5|0];x.lineWidth=.6+a*.8;x.stroke()}
+
+t+=.009;requestAnimationFrame(draw)}
+
+z();draw();
+const T=document.getElementById('t'),L=()=>T.textContent=new Date().toLocaleTimeString('en-US',{timeZone:'America/Los_Angeles',hour:'numeric',minute:'2-digit'})+' PST';
+L();setInterval(L,1e4);onresize=()=>{x.setTransform(1,0,0,1,0,0);z()};
+c.onmousedown=e=>{isDrag=!0;lastX=e.clientX;lastY=e.clientY;velX=velY=0};
+c.onmousemove=e=>{if(isDrag){const px=e.clientX,py=e.clientY,dx=px-cx,dy=py-cy,m=w<h?w*.5:h*.5;ampTarget=.05+(dx*dx+dy*dy<m*m?Math.sqrt(dx*dx+dy*dy)/m:.95)*.35;const mx=px-lastX,my=py-lastY;dragX+=mx*.005;dragY+=my*.005;velX=mx*.005;velY=my*.005;lastX=px;lastY=py}};
+c.onmouseup=c.onmouseleave=()=>{isDrag=!1;ampTarget=0};
+c.ontouchstart=e=>{e.preventDefault();const t=e.touches[0];isDrag=!0;lastX=t.clientX;lastY=t.clientY;velX=velY=0};
+c.ontouchmove=e=>{e.preventDefault();const t=e.touches[0],px=t.clientX,py=t.clientY,dx=px-cx,dy=py-cy,m=w<h?w*.5:h*.5;ampTarget=.05+(dx*dx+dy*dy<m*m?Math.sqrt(dx*dx+dy*dy)/m:.95)*.35;const mx=px-lastX,my=py-lastY;dragX+=mx*.005;dragY+=my*.005;velX=mx*.005;velY=my*.005;lastX=px;lastY=py};
+c.ontouchend=()=>{isDrag=!1;ampTarget=0}
+</script>
+</body>
+</html>
