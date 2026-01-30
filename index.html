@@ -52,9 +52,9 @@ const resSinPhi=new Float32Array(ptsPerLine),resCosPhi=new Float32Array(ptsPerLi
 const resSinTheta=new Float32Array(ptsPerLine),resCosTheta=new Float32Array(ptsPerLine);
 for(let k=0;k<ptsPerLine;k++){const f=k/RES;resSinPhi[k]=sin(f*PI);resCosPhi[k]=cos(f*PI);resSinTheta[k]=sin(f*TAU);resCosTheta[k]=cos(f*TAU)}
 
-// Pre-compute color LUT (100 levels)
+// Pre-compute color LUT (100 levels) - lightened by 2 shades
 const colors=new Array(100);
-for(let i=0;i<100;i++){const a=i/99,v=50+a*50|0,o=(.08+a*.55).toFixed(2);colors[i]=`rgba(${v},${v},${v},${o})`}
+for(let i=0;i<100;i++){const a=i/99,v=80+a*50|0,o=(.08+a*.55).toFixed(2);colors[i]=`rgba(${v},${v},${v},${o})`}
 
 // Inline noise - no function calls inside
 function noise(px,py,pz){
