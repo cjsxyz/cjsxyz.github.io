@@ -19,6 +19,8 @@
     color: #ededeb;
     font: clamp(17px, 4.5vw, 18px)/1.6 system-ui, sans-serif;
     -webkit-font-smoothing: antialiased;
+    -webkit-user-select: none;
+    user-select: none;
   }
   main { max-width: 34rem; }
   h1 { font: inherit; font-weight: 600; margin: 0 0 1.2em; letter-spacing: -0.01em; }
@@ -33,7 +35,6 @@
   <p>I’m currently at <a href="https://www.paradigm.xyz">Paradigm</a>, where I help early-stage founders build out their teams. I enjoy connecting with people working on hard problems. Feel free to <a href="mailto:chris@paradigm.xyz">reach out</a>.</p>
 </main>
 <script>
-  // iOS Safari ignores user-scalable=no, so block pinch-zoom directly.
   for (const e of ["gesturestart", "gesturechange"]) document.addEventListener(e, ev => ev.preventDefault(), { passive: false });
 </script>
 </body>
