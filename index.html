@@ -23,7 +23,7 @@
     padding: min(48px, 8vh) 24px;
     box-sizing: border-box;
     color: var(--fg);
-    font: clamp(12px, min(max(17px, 4.5vw), 5.4vh), 18px)/1.6 system-ui, sans-serif;
+    font: clamp(12px, min(max(17px, 4.5vw), 4.6vh, 2vw + 2vh), 18px)/1.6 system-ui, sans-serif;
     -webkit-font-smoothing: antialiased;
     -webkit-user-select: none;
     user-select: none;
@@ -38,9 +38,10 @@
 </head>
 <body>
 <main>
-  <h1>Hi, I’m Chris.</h1>
-  <p>I’m grateful to be at <a href="https://www.paradigm.xyz">Paradigm</a>, where I get to connect with people working on hard problems and help founders with hiring.</p>
-  <p>Feel free to <a href="mailto:chris@paradigm.xyz">reach out</a>.</p>
+  <h1>Hey, I’m Chris.</h1>
+  <p>I’ve worked at a startup building orbs that scan your iris, and another that went head-to-head with Amazon on groceries and won. Right now, I’m at <a href="https://www.paradigm.xyz">Paradigm</a>, where I help people tackling hard problems build exceptional teams.</p>
+  <p>Outside of work, I’m building a homestead in the Napa mountains and learning as much as I can about the world.</p>
+  <p>You can reach me via <a href="mailto:chris@paradigm.xyz">email</a>.</p>
 </main>
 <script>
   for (const e of ["gesturestart", "gesturechange"]) document.addEventListener(e, ev => ev.preventDefault(), { passive: false });
