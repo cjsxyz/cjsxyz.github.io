@@ -1,0 +1,1203 @@
+{
+  "verifiedAt": "2026-10-23T00:43:45.997Z",
+  "sourceModule": "outputs/sky/weather.js",
+  "sourceSHA256": "e2f22d5584b463ad830b2493bc3a8bc47db629752e40d4d23829852346c1a394",
+  "officialDocumentation": "https://open-meteo.com/en/docs",
+  "documentedConditionCount": 28,
+  "supportedConditionCount": 29,
+  "compatibilityCodes": [
+    97
+  ],
+  "compatibilityNote": "Code 97 is a local compatibility extension, not in the official Open-Meteo code table.",
+  "endpoint": "https://api.open-meteo.com/v1/forecast?latitude=37.7749&longitude=-122.4194&timezone=America%2FLos_Angeles&timeformat=unixtime&temperature_unit=fahrenheit&current=temperature_2m%2Cis_day%2Cweather_code%2Ccloud_cover%2Cdirect_normal_irradiance_instant",
+  "refreshMs": 300000,
+  "baselineCloudCover": null,
+  "baselineDirectNormalIrradiance": null,
+  "sceneDisplayNames": {
+    "cloudy": "Cloudy",
+    "sunny": "Sunny",
+    "overcast": "Overcast",
+    "rain": "Rain",
+    "fog": "Fog / Marine Layer",
+    "night": "Cloudy night",
+    "clear-night": "Clear night",
+    "overcast-night": "Overcast night",
+    "night-rain": "Night rain",
+    "night-fog": "Night fog"
+  },
+  "mappings": [
+    {
+      "code": 0,
+      "condition": "Clear sky",
+      "siteConditionLabel": "Clear sky",
+      "officialOpenMeteoCode": true,
+      "day": "sunny",
+      "night": "clear-night",
+      "note": "Clear 0/1 with at most 25% or missing coverage remains Sunny/Clear night. Otherwise daytime DNI > 120 selects Cloudy, DNI <= 120 selects Overcast; missing DNI uses code 3 or 60% coverage fallback. Night ignores solar readings."
+    },
+    {
+      "code": 1,
+      "condition": "Mainly clear",
+      "siteConditionLabel": "Mainly clear",
+      "officialOpenMeteoCode": true,
+      "day": "sunny",
+      "night": "clear-night",
+      "note": "Clear 0/1 with at most 25% or missing coverage remains Sunny/Clear night. Otherwise daytime DNI > 120 selects Cloudy, DNI <= 120 selects Overcast; missing DNI uses code 3 or 60% coverage fallback. Night ignores solar readings."
+    },
+    {
+      "code": 2,
+      "condition": "Partly cloudy",
+      "siteConditionLabel": "Partly cloudy",
+      "officialOpenMeteoCode": true,
+      "day": "cloudy",
+      "night": "night",
+      "note": "Clear 0/1 with at most 25% or missing coverage remains Sunny/Clear night. Otherwise daytime DNI > 120 selects Cloudy, DNI <= 120 selects Overcast; missing DNI uses code 3 or 60% coverage fallback. Night ignores solar readings."
+    },
+    {
+      "code": 3,
+      "condition": "Overcast",
+      "siteConditionLabel": "Overcast",
+      "officialOpenMeteoCode": true,
+      "day": "overcast",
+      "night": "overcast-night",
+      "note": "Clear 0/1 with at most 25% or missing coverage remains Sunny/Clear night. Otherwise daytime DNI > 120 selects Cloudy, DNI <= 120 selects Overcast; missing DNI uses code 3 or 60% coverage fallback. Night ignores solar readings."
+    },
+    {
+      "code": 45,
+      "condition": "Fog",
+      "siteConditionLabel": "Fog",
+      "officialOpenMeteoCode": true,
+      "day": "fog",
+      "night": "night-fog",
+      "note": "Explicit fog priority."
+    },
+    {
+      "code": 48,
+      "condition": "Depositing rime fog",
+      "siteConditionLabel": "Fog",
+      "officialOpenMeteoCode": true,
+      "day": "fog",
+      "night": "night-fog",
+      "note": "Explicit fog priority."
+    },
+    {
+      "code": 51,
+      "condition": "Light drizzle",
+      "siteConditionLabel": "Drizzle",
+      "officialOpenMeteoCode": true,
+      "day": "rain",
+      "night": "night-rain",
+      "note": "Rain/drizzle priority; freezing conditions use the rain approximation."
+    },
+    {
+      "code": 53,
+      "condition": "Moderate drizzle",
+      "siteConditionLabel": "Drizzle",
+      "officialOpenMeteoCode": true,
+      "day": "rain",
+      "night": "night-rain",
+      "note": "Rain/drizzle priority; freezing conditions use the rain approximation."
+    },
+    {
+      "code": 55,
+      "condition": "Dense drizzle",
+      "siteConditionLabel": "Drizzle",
+      "officialOpenMeteoCode": true,
+      "day": "rain",
+      "night": "night-rain",
+      "note": "Rain/drizzle priority; freezing conditions use the rain approximation."
+    },
+    {
+      "code": 56,
+      "condition": "Light freezing drizzle",
+      "siteConditionLabel": "Freezing drizzle",
+      "officialOpenMeteoCode": true,
+      "day": "rain",
+      "night": "night-rain",
+      "note": "Rain/drizzle priority; freezing conditions use the rain approximation."
+    },
+    {
+      "code": 57,
+      "condition": "Dense freezing drizzle",
+      "siteConditionLabel": "Freezing drizzle",
+      "officialOpenMeteoCode": true,
+      "day": "rain",
+      "night": "night-rain",
+      "note": "Rain/drizzle priority; freezing conditions use the rain approximation."
+    },
+    {
+      "code": 61,
+      "condition": "Slight rain",
+      "siteConditionLabel": "Rain",
+      "officialOpenMeteoCode": true,
+      "day": "rain",
+      "night": "night-rain",
+      "note": "Rain/drizzle priority; freezing conditions use the rain approximation."
+    },
+    {
+      "code": 63,
+      "condition": "Moderate rain",
+      "siteConditionLabel": "Rain",
+      "officialOpenMeteoCode": true,
+      "day": "rain",
+      "night": "night-rain",
+      "note": "Rain/drizzle priority; freezing conditions use the rain approximation."
+    },
+    {
+      "code": 65,
+      "condition": "Heavy rain",
+      "siteConditionLabel": "Rain",
+      "officialOpenMeteoCode": true,
+      "day": "rain",
+      "night": "night-rain",
+      "note": "Rain/drizzle priority; freezing conditions use the rain approximation."
+    },
+    {
+      "code": 66,
+      "condition": "Light freezing rain",
+      "siteConditionLabel": "Freezing rain",
+      "officialOpenMeteoCode": true,
+      "day": "rain",
+      "night": "night-rain",
+      "note": "Rain/drizzle priority; freezing conditions use the rain approximation."
+    },
+    {
+      "code": 67,
+      "condition": "Heavy freezing rain",
+      "siteConditionLabel": "Freezing rain",
+      "officialOpenMeteoCode": true,
+      "day": "rain",
+      "night": "night-rain",
+      "note": "Rain/drizzle priority; freezing conditions use the rain approximation."
+    },
+    {
+      "code": 71,
+      "condition": "Slight snowfall",
+      "siteConditionLabel": "Snow",
+      "officialOpenMeteoCode": true,
+      "day": "cloudy",
+      "night": "night",
+      "note": "Generic cloud fallback; summary still says snowing."
+    },
+    {
+      "code": 73,
+      "condition": "Moderate snowfall",
+      "siteConditionLabel": "Snow",
+      "officialOpenMeteoCode": true,
+      "day": "cloudy",
+      "night": "night",
+      "note": "Generic cloud fallback; summary still says snowing."
+    },
+    {
+      "code": 75,
+      "condition": "Heavy snowfall",
+      "siteConditionLabel": "Snow",
+      "officialOpenMeteoCode": true,
+      "day": "cloudy",
+      "night": "night",
+      "note": "Generic cloud fallback; summary still says snowing."
+    },
+    {
+      "code": 77,
+      "condition": "Snow grains",
+      "siteConditionLabel": "Snow",
+      "officialOpenMeteoCode": true,
+      "day": "cloudy",
+      "night": "night",
+      "note": "Generic cloud fallback; summary still says snowing."
+    },
+    {
+      "code": 80,
+      "condition": "Slight rain showers",
+      "siteConditionLabel": "Rain showers",
+      "officialOpenMeteoCode": true,
+      "day": "rain",
+      "night": "night-rain",
+      "note": "Rain/drizzle priority; freezing conditions use the rain approximation."
+    },
+    {
+      "code": 81,
+      "condition": "Moderate rain showers",
+      "siteConditionLabel": "Rain showers",
+      "officialOpenMeteoCode": true,
+      "day": "rain",
+      "night": "night-rain",
+      "note": "Rain/drizzle priority; freezing conditions use the rain approximation."
+    },
+    {
+      "code": 82,
+      "condition": "Violent rain showers",
+      "siteConditionLabel": "Rain showers",
+      "officialOpenMeteoCode": true,
+      "day": "rain",
+      "night": "night-rain",
+      "note": "Rain/drizzle priority; freezing conditions use the rain approximation."
+    },
+    {
+      "code": 85,
+      "condition": "Slight snow showers",
+      "siteConditionLabel": "Snow showers",
+      "officialOpenMeteoCode": true,
+      "day": "cloudy",
+      "night": "night",
+      "note": "Generic cloud fallback; summary still says snowing."
+    },
+    {
+      "code": 86,
+      "condition": "Heavy snow showers",
+      "siteConditionLabel": "Snow showers",
+      "officialOpenMeteoCode": true,
+      "day": "cloudy",
+      "night": "night",
+      "note": "Generic cloud fallback; summary still says snowing."
+    },
+    {
+      "code": 95,
+      "condition": "Thunderstorm",
+      "siteConditionLabel": "Thunderstorm",
+      "officialOpenMeteoCode": true,
+      "day": "rain",
+      "night": "night-rain",
+      "note": "Rain approximation without lightning or hail."
+    },
+    {
+      "code": 96,
+      "condition": "Thunderstorm with slight hail",
+      "siteConditionLabel": "Thunderstorm",
+      "officialOpenMeteoCode": true,
+      "day": "rain",
+      "night": "night-rain",
+      "note": "Rain approximation without lightning or hail."
+    },
+    {
+      "code": 97,
+      "condition": "Heavy thunderstorm",
+      "siteConditionLabel": "Thunderstorm",
+      "officialOpenMeteoCode": false,
+      "day": "rain",
+      "night": "night-rain",
+      "note": "Rain approximation without lightning or hail."
+    },
+    {
+      "code": 99,
+      "condition": "Thunderstorm with heavy hail",
+      "siteConditionLabel": "Thunderstorm",
+      "officialOpenMeteoCode": true,
+      "day": "rain",
+      "night": "night-rain",
+      "note": "Rain approximation without lightning or hail."
+    }
+  ],
+  "sunlightRule": {
+    "field": "direct_normal_irradiance_instant",
+    "unit": "W/m²",
+    "validatedRange": [
+      0,
+      2000
+    ],
+    "operator": ">",
+    "threshold": 120,
+    "input": "Current instantaneous model estimate; no hourly interpolation.",
+    "scope": "Daytime cloud scenes after explicit precipitation/fog and clear-sky checks; solar data never selects a night scene.",
+    "note": "Presentation cutoff, not a condition-code override or a rain/fog diagnosis."
+  },
+  "fallbackRule": "Without valid modeled DNI (missing/null), code 3 or cloud cover >= 60% selects Overcast. At night the same code/cover logic selects Overcast night; sparse clear 0/1 remains Clear night. Malformed values reject.",
+  "evidence": {
+    "source": "Deterministic synthetic inputs executed against the installed SFWeather API; no new live observation claimed.",
+    "groupsPassed": 13,
+    "classificationChecksPassed": 4698,
+    "summaryChecksPassed": 4698,
+    "conditionLabelChecksPassed": 4698,
+    "cloudCoverCases": [
+      "missing",
+      null,
+      0,
+      25,
+      25.0001,
+      59.999,
+      60,
+      62,
+      100
+    ],
+    "sunlightCases": [
+      "missing",
+      null,
+      0,
+      119.999,
+      120,
+      120.0001,
+      121,
+      1000,
+      2000
+    ],
+    "checks": [
+      "current-only SF endpoint requests instantaneous DNI and keeps five-minute refresh",
+      "all 29 codes preserve rain/fog/snow priorities across day, night, cover and sunlight boundaries",
+      "missing sunlight differs from genuine zero; daytime code 3 can show sunlit clouds",
+      "near sunset uses is_day; remaining positive sunlight never selects a daytime video after dark",
+      "fetch preserves null, missing, and zero DNI through normalization and JSON-cache round trips",
+      "old cached records still use cover fallback until a fresh DNI reading arrives",
+      "obsolete precipitation, visibility, humidity, and low-cloud fields cannot imply rain or fog",
+      "malformed DNI measurements are rejected rather than silently coerced",
+      "required fields, optional ranges, and unsupported code 98 retain strict validation",
+      "current freshness retains inclusive 2-hour old and 30-minute future boundaries",
+      "missing, invalid, and provider-error payloads cannot become successful weather data",
+      "HTTP failure rejects before parsing JSON; network and malformed JSON errors propagate",
+      "fetch forwards abort signal, uses no-store/omit, and aborts without fake success"
+    ],
+    "failures": [],
+    "controllerChecks": {
+      "passed": 5,
+      "checks": [
+        "fresh legacy cache paints fallback but startup still fetches current sunlight and changes only the active video",
+        "refresh waits five minutes after completion and prevents overlapping requests",
+        "failed refresh keeps the last scene and retries after one minute, then reported drizzle takes priority",
+        "hidden startup fetches immediately when visible despite a fresh nighttime cache",
+        "reduced motion keeps all videos paused across sunlight and day/night updates"
+      ],
+      "failures": []
+    }
+  },
+  "thresholdMatrix": [
+    {
+      "code": 0,
+      "cloud_cover": null,
+      "direct_normal_irradiance_instant": null,
+      "day": "sunny",
+      "night": "clear-night"
+    },
+    {
+      "code": 0,
+      "cloud_cover": null,
+      "direct_normal_irradiance_instant": 0,
+      "day": "sunny",
+      "night": "clear-night"
+    },
+    {
+      "code": 0,
+      "cloud_cover": null,
+      "direct_normal_irradiance_instant": 120,
+      "day": "sunny",
+      "night": "clear-night"
+    },
+    {
+      "code": 0,
+      "cloud_cover": null,
+      "direct_normal_irradiance_instant": 120.0001,
+      "day": "sunny",
+      "night": "clear-night"
+    },
+    {
+      "code": 0,
+      "cloud_cover": null,
+      "direct_normal_irradiance_instant": 1000,
+      "day": "sunny",
+      "night": "clear-night"
+    },
+    {
+      "code": 0,
+      "cloud_cover": 25,
+      "direct_normal_irradiance_instant": null,
+      "day": "sunny",
+      "night": "clear-night"
+    },
+    {
+      "code": 0,
+      "cloud_cover": 25,
+      "direct_normal_irradiance_instant": 0,
+      "day": "sunny",
+      "night": "clear-night"
+    },
+    {
+      "code": 0,
+      "cloud_cover": 25,
+      "direct_normal_irradiance_instant": 120,
+      "day": "sunny",
+      "night": "clear-night"
+    },
+    {
+      "code": 0,
+      "cloud_cover": 25,
+      "direct_normal_irradiance_instant": 120.0001,
+      "day": "sunny",
+      "night": "clear-night"
+    },
+    {
+      "code": 0,
+      "cloud_cover": 25,
+      "direct_normal_irradiance_instant": 1000,
+      "day": "sunny",
+      "night": "clear-night"
+    },
+    {
+      "code": 0,
+      "cloud_cover": 25.0001,
+      "direct_normal_irradiance_instant": null,
+      "day": "cloudy",
+      "night": "night"
+    },
+    {
+      "code": 0,
+      "cloud_cover": 25.0001,
+      "direct_normal_irradiance_instant": 0,
+      "day": "overcast",
+      "night": "night"
+    },
+    {
+      "code": 0,
+      "cloud_cover": 25.0001,
+      "direct_normal_irradiance_instant": 120,
+      "day": "overcast",
+      "night": "night"
+    },
+    {
+      "code": 0,
+      "cloud_cover": 25.0001,
+      "direct_normal_irradiance_instant": 120.0001,
+      "day": "cloudy",
+      "night": "night"
+    },
+    {
+      "code": 0,
+      "cloud_cover": 25.0001,
+      "direct_normal_irradiance_instant": 1000,
+      "day": "cloudy",
+      "night": "night"
+    },
+    {
+      "code": 0,
+      "cloud_cover": 59.999,
+      "direct_normal_irradiance_instant": null,
+      "day": "cloudy",
+      "night": "night"
+    },
+    {
+      "code": 0,
+      "cloud_cover": 59.999,
+      "direct_normal_irradiance_instant": 0,
+      "day": "overcast",
+      "night": "night"
+    },
+    {
+      "code": 0,
+      "cloud_cover": 59.999,
+      "direct_normal_irradiance_instant": 120,
+      "day": "overcast",
+      "night": "night"
+    },
+    {
+      "code": 0,
+      "cloud_cover": 59.999,
+      "direct_normal_irradiance_instant": 120.0001,
+      "day": "cloudy",
+      "night": "night"
+    },
+    {
+      "code": 0,
+      "cloud_cover": 59.999,
+      "direct_normal_irradiance_instant": 1000,
+      "day": "cloudy",
+      "night": "night"
+    },
+    {
+      "code": 0,
+      "cloud_cover": 60,
+      "direct_normal_irradiance_instant": null,
+      "day": "overcast",
+      "night": "overcast-night"
+    },
+    {
+      "code": 0,
+      "cloud_cover": 60,
+      "direct_normal_irradiance_instant": 0,
+      "day": "overcast",
+      "night": "overcast-night"
+    },
+    {
+      "code": 0,
+      "cloud_cover": 60,
+      "direct_normal_irradiance_instant": 120,
+      "day": "overcast",
+      "night": "overcast-night"
+    },
+    {
+      "code": 0,
+      "cloud_cover": 60,
+      "direct_normal_irradiance_instant": 120.0001,
+      "day": "cloudy",
+      "night": "overcast-night"
+    },
+    {
+      "code": 0,
+      "cloud_cover": 60,
+      "direct_normal_irradiance_instant": 1000,
+      "day": "cloudy",
+      "night": "overcast-night"
+    },
+    {
+      "code": 0,
+      "cloud_cover": 100,
+      "direct_normal_irradiance_instant": null,
+      "day": "overcast",
+      "night": "overcast-night"
+    },
+    {
+      "code": 0,
+      "cloud_cover": 100,
+      "direct_normal_irradiance_instant": 0,
+      "day": "overcast",
+      "night": "overcast-night"
+    },
+    {
+      "code": 0,
+      "cloud_cover": 100,
+      "direct_normal_irradiance_instant": 120,
+      "day": "overcast",
+      "night": "overcast-night"
+    },
+    {
+      "code": 0,
+      "cloud_cover": 100,
+      "direct_normal_irradiance_instant": 120.0001,
+      "day": "cloudy",
+      "night": "overcast-night"
+    },
+    {
+      "code": 0,
+      "cloud_cover": 100,
+      "direct_normal_irradiance_instant": 1000,
+      "day": "cloudy",
+      "night": "overcast-night"
+    },
+    {
+      "code": 1,
+      "cloud_cover": null,
+      "direct_normal_irradiance_instant": null,
+      "day": "sunny",
+      "night": "clear-night"
+    },
+    {
+      "code": 1,
+      "cloud_cover": null,
+      "direct_normal_irradiance_instant": 0,
+      "day": "sunny",
+      "night": "clear-night"
+    },
+    {
+      "code": 1,
+      "cloud_cover": null,
+      "direct_normal_irradiance_instant": 120,
+      "day": "sunny",
+      "night": "clear-night"
+    },
+    {
+      "code": 1,
+      "cloud_cover": null,
+      "direct_normal_irradiance_instant": 120.0001,
+      "day": "sunny",
+      "night": "clear-night"
+    },
+    {
+      "code": 1,
+      "cloud_cover": null,
+      "direct_normal_irradiance_instant": 1000,
+      "day": "sunny",
+      "night": "clear-night"
+    },
+    {
+      "code": 1,
+      "cloud_cover": 25,
+      "direct_normal_irradiance_instant": null,
+      "day": "sunny",
+      "night": "clear-night"
+    },
+    {
+      "code": 1,
+      "cloud_cover": 25,
+      "direct_normal_irradiance_instant": 0,
+      "day": "sunny",
+      "night": "clear-night"
+    },
+    {
+      "code": 1,
+      "cloud_cover": 25,
+      "direct_normal_irradiance_instant": 120,
+      "day": "sunny",
+      "night": "clear-night"
+    },
+    {
+      "code": 1,
+      "cloud_cover": 25,
+      "direct_normal_irradiance_instant": 120.0001,
+      "day": "sunny",
+      "night": "clear-night"
+    },
+    {
+      "code": 1,
+      "cloud_cover": 25,
+      "direct_normal_irradiance_instant": 1000,
+      "day": "sunny",
+      "night": "clear-night"
+    },
+    {
+      "code": 1,
+      "cloud_cover": 25.0001,
+      "direct_normal_irradiance_instant": null,
+      "day": "cloudy",
+      "night": "night"
+    },
+    {
+      "code": 1,
+      "cloud_cover": 25.0001,
+      "direct_normal_irradiance_instant": 0,
+      "day": "overcast",
+      "night": "night"
+    },
+    {
+      "code": 1,
+      "cloud_cover": 25.0001,
+      "direct_normal_irradiance_instant": 120,
+      "day": "overcast",
+      "night": "night"
+    },
+    {
+      "code": 1,
+      "cloud_cover": 25.0001,
+      "direct_normal_irradiance_instant": 120.0001,
+      "day": "cloudy",
+      "night": "night"
+    },
+    {
+      "code": 1,
+      "cloud_cover": 25.0001,
+      "direct_normal_irradiance_instant": 1000,
+      "day": "cloudy",
+      "night": "night"
+    },
+    {
+      "code": 1,
+      "cloud_cover": 59.999,
+      "direct_normal_irradiance_instant": null,
+      "day": "cloudy",
+      "night": "night"
+    },
+    {
+      "code": 1,
+      "cloud_cover": 59.999,
+      "direct_normal_irradiance_instant": 0,
+      "day": "overcast",
+      "night": "night"
+    },
+    {
+      "code": 1,
+      "cloud_cover": 59.999,
+      "direct_normal_irradiance_instant": 120,
+      "day": "overcast",
+      "night": "night"
+    },
+    {
+      "code": 1,
+      "cloud_cover": 59.999,
+      "direct_normal_irradiance_instant": 120.0001,
+      "day": "cloudy",
+      "night": "night"
+    },
+    {
+      "code": 1,
+      "cloud_cover": 59.999,
+      "direct_normal_irradiance_instant": 1000,
+      "day": "cloudy",
+      "night": "night"
+    },
+    {
+      "code": 1,
+      "cloud_cover": 60,
+      "direct_normal_irradiance_instant": null,
+      "day": "overcast",
+      "night": "overcast-night"
+    },
+    {
+      "code": 1,
+      "cloud_cover": 60,
+      "direct_normal_irradiance_instant": 0,
+      "day": "overcast",
+      "night": "overcast-night"
+    },
+    {
+      "code": 1,
+      "cloud_cover": 60,
+      "direct_normal_irradiance_instant": 120,
+      "day": "overcast",
+      "night": "overcast-night"
+    },
+    {
+      "code": 1,
+      "cloud_cover": 60,
+      "direct_normal_irradiance_instant": 120.0001,
+      "day": "cloudy",
+      "night": "overcast-night"
+    },
+    {
+      "code": 1,
+      "cloud_cover": 60,
+      "direct_normal_irradiance_instant": 1000,
+      "day": "cloudy",
+      "night": "overcast-night"
+    },
+    {
+      "code": 1,
+      "cloud_cover": 100,
+      "direct_normal_irradiance_instant": null,
+      "day": "overcast",
+      "night": "overcast-night"
+    },
+    {
+      "code": 1,
+      "cloud_cover": 100,
+      "direct_normal_irradiance_instant": 0,
+      "day": "overcast",
+      "night": "overcast-night"
+    },
+    {
+      "code": 1,
+      "cloud_cover": 100,
+      "direct_normal_irradiance_instant": 120,
+      "day": "overcast",
+      "night": "overcast-night"
+    },
+    {
+      "code": 1,
+      "cloud_cover": 100,
+      "direct_normal_irradiance_instant": 120.0001,
+      "day": "cloudy",
+      "night": "overcast-night"
+    },
+    {
+      "code": 1,
+      "cloud_cover": 100,
+      "direct_normal_irradiance_instant": 1000,
+      "day": "cloudy",
+      "night": "overcast-night"
+    },
+    {
+      "code": 2,
+      "cloud_cover": null,
+      "direct_normal_irradiance_instant": null,
+      "day": "cloudy",
+      "night": "night"
+    },
+    {
+      "code": 2,
+      "cloud_cover": null,
+      "direct_normal_irradiance_instant": 0,
+      "day": "overcast",
+      "night": "night"
+    },
+    {
+      "code": 2,
+      "cloud_cover": null,
+      "direct_normal_irradiance_instant": 120,
+      "day": "overcast",
+      "night": "night"
+    },
+    {
+      "code": 2,
+      "cloud_cover": null,
+      "direct_normal_irradiance_instant": 120.0001,
+      "day": "cloudy",
+      "night": "night"
+    },
+    {
+      "code": 2,
+      "cloud_cover": null,
+      "direct_normal_irradiance_instant": 1000,
+      "day": "cloudy",
+      "night": "night"
+    },
+    {
+      "code": 2,
+      "cloud_cover": 25,
+      "direct_normal_irradiance_instant": null,
+      "day": "cloudy",
+      "night": "night"
+    },
+    {
+      "code": 2,
+      "cloud_cover": 25,
+      "direct_normal_irradiance_instant": 0,
+      "day": "overcast",
+      "night": "night"
+    },
+    {
+      "code": 2,
+      "cloud_cover": 25,
+      "direct_normal_irradiance_instant": 120,
+      "day": "overcast",
+      "night": "night"
+    },
+    {
+      "code": 2,
+      "cloud_cover": 25,
+      "direct_normal_irradiance_instant": 120.0001,
+      "day": "cloudy",
+      "night": "night"
+    },
+    {
+      "code": 2,
+      "cloud_cover": 25,
+      "direct_normal_irradiance_instant": 1000,
+      "day": "cloudy",
+      "night": "night"
+    },
+    {
+      "code": 2,
+      "cloud_cover": 25.0001,
+      "direct_normal_irradiance_instant": null,
+      "day": "cloudy",
+      "night": "night"
+    },
+    {
+      "code": 2,
+      "cloud_cover": 25.0001,
+      "direct_normal_irradiance_instant": 0,
+      "day": "overcast",
+      "night": "night"
+    },
+    {
+      "code": 2,
+      "cloud_cover": 25.0001,
+      "direct_normal_irradiance_instant": 120,
+      "day": "overcast",
+      "night": "night"
+    },
+    {
+      "code": 2,
+      "cloud_cover": 25.0001,
+      "direct_normal_irradiance_instant": 120.0001,
+      "day": "cloudy",
+      "night": "night"
+    },
+    {
+      "code": 2,
+      "cloud_cover": 25.0001,
+      "direct_normal_irradiance_instant": 1000,
+      "day": "cloudy",
+      "night": "night"
+    },
+    {
+      "code": 2,
+      "cloud_cover": 59.999,
+      "direct_normal_irradiance_instant": null,
+      "day": "cloudy",
+      "night": "night"
+    },
+    {
+      "code": 2,
+      "cloud_cover": 59.999,
+      "direct_normal_irradiance_instant": 0,
+      "day": "overcast",
+      "night": "night"
+    },
+    {
+      "code": 2,
+      "cloud_cover": 59.999,
+      "direct_normal_irradiance_instant": 120,
+      "day": "overcast",
+      "night": "night"
+    },
+    {
+      "code": 2,
+      "cloud_cover": 59.999,
+      "direct_normal_irradiance_instant": 120.0001,
+      "day": "cloudy",
+      "night": "night"
+    },
+    {
+      "code": 2,
+      "cloud_cover": 59.999,
+      "direct_normal_irradiance_instant": 1000,
+      "day": "cloudy",
+      "night": "night"
+    },
+    {
+      "code": 2,
+      "cloud_cover": 60,
+      "direct_normal_irradiance_instant": null,
+      "day": "overcast",
+      "night": "overcast-night"
+    },
+    {
+      "code": 2,
+      "cloud_cover": 60,
+      "direct_normal_irradiance_instant": 0,
+      "day": "overcast",
+      "night": "overcast-night"
+    },
+    {
+      "code": 2,
+      "cloud_cover": 60,
+      "direct_normal_irradiance_instant": 120,
+      "day": "overcast",
+      "night": "overcast-night"
+    },
+    {
+      "code": 2,
+      "cloud_cover": 60,
+      "direct_normal_irradiance_instant": 120.0001,
+      "day": "cloudy",
+      "night": "overcast-night"
+    },
+    {
+      "code": 2,
+      "cloud_cover": 60,
+      "direct_normal_irradiance_instant": 1000,
+      "day": "cloudy",
+      "night": "overcast-night"
+    },
+    {
+      "code": 2,
+      "cloud_cover": 100,
+      "direct_normal_irradiance_instant": null,
+      "day": "overcast",
+      "night": "overcast-night"
+    },
+    {
+      "code": 2,
+      "cloud_cover": 100,
+      "direct_normal_irradiance_instant": 0,
+      "day": "overcast",
+      "night": "overcast-night"
+    },
+    {
+      "code": 2,
+      "cloud_cover": 100,
+      "direct_normal_irradiance_instant": 120,
+      "day": "overcast",
+      "night": "overcast-night"
+    },
+    {
+      "code": 2,
+      "cloud_cover": 100,
+      "direct_normal_irradiance_instant": 120.0001,
+      "day": "cloudy",
+      "night": "overcast-night"
+    },
+    {
+      "code": 2,
+      "cloud_cover": 100,
+      "direct_normal_irradiance_instant": 1000,
+      "day": "cloudy",
+      "night": "overcast-night"
+    },
+    {
+      "code": 3,
+      "cloud_cover": null,
+      "direct_normal_irradiance_instant": null,
+      "day": "overcast",
+      "night": "overcast-night"
+    },
+    {
+      "code": 3,
+      "cloud_cover": null,
+      "direct_normal_irradiance_instant": 0,
+      "day": "overcast",
+      "night": "overcast-night"
+    },
+    {
+      "code": 3,
+      "cloud_cover": null,
+      "direct_normal_irradiance_instant": 120,
+      "day": "overcast",
+      "night": "overcast-night"
+    },
+    {
+      "code": 3,
+      "cloud_cover": null,
+      "direct_normal_irradiance_instant": 120.0001,
+      "day": "cloudy",
+      "night": "overcast-night"
+    },
+    {
+      "code": 3,
+      "cloud_cover": null,
+      "direct_normal_irradiance_instant": 1000,
+      "day": "cloudy",
+      "night": "overcast-night"
+    },
+    {
+      "code": 3,
+      "cloud_cover": 25,
+      "direct_normal_irradiance_instant": null,
+      "day": "overcast",
+      "night": "overcast-night"
+    },
+    {
+      "code": 3,
+      "cloud_cover": 25,
+      "direct_normal_irradiance_instant": 0,
+      "day": "overcast",
+      "night": "overcast-night"
+    },
+    {
+      "code": 3,
+      "cloud_cover": 25,
+      "direct_normal_irradiance_instant": 120,
+      "day": "overcast",
+      "night": "overcast-night"
+    },
+    {
+      "code": 3,
+      "cloud_cover": 25,
+      "direct_normal_irradiance_instant": 120.0001,
+      "day": "cloudy",
+      "night": "overcast-night"
+    },
+    {
+      "code": 3,
+      "cloud_cover": 25,
+      "direct_normal_irradiance_instant": 1000,
+      "day": "cloudy",
+      "night": "overcast-night"
+    },
+    {
+      "code": 3,
+      "cloud_cover": 25.0001,
+      "direct_normal_irradiance_instant": null,
+      "day": "overcast",
+      "night": "overcast-night"
+    },
+    {
+      "code": 3,
+      "cloud_cover": 25.0001,
+      "direct_normal_irradiance_instant": 0,
+      "day": "overcast",
+      "night": "overcast-night"
+    },
+    {
+      "code": 3,
+      "cloud_cover": 25.0001,
+      "direct_normal_irradiance_instant": 120,
+      "day": "overcast",
+      "night": "overcast-night"
+    },
+    {
+      "code": 3,
+      "cloud_cover": 25.0001,
+      "direct_normal_irradiance_instant": 120.0001,
+      "day": "cloudy",
+      "night": "overcast-night"
+    },
+    {
+      "code": 3,
+      "cloud_cover": 25.0001,
+      "direct_normal_irradiance_instant": 1000,
+      "day": "cloudy",
+      "night": "overcast-night"
+    },
+    {
+      "code": 3,
+      "cloud_cover": 59.999,
+      "direct_normal_irradiance_instant": null,
+      "day": "overcast",
+      "night": "overcast-night"
+    },
+    {
+      "code": 3,
+      "cloud_cover": 59.999,
+      "direct_normal_irradiance_instant": 0,
+      "day": "overcast",
+      "night": "overcast-night"
+    },
+    {
+      "code": 3,
+      "cloud_cover": 59.999,
+      "direct_normal_irradiance_instant": 120,
+      "day": "overcast",
+      "night": "overcast-night"
+    },
+    {
+      "code": 3,
+      "cloud_cover": 59.999,
+      "direct_normal_irradiance_instant": 120.0001,
+      "day": "cloudy",
+      "night": "overcast-night"
+    },
+    {
+      "code": 3,
+      "cloud_cover": 59.999,
+      "direct_normal_irradiance_instant": 1000,
+      "day": "cloudy",
+      "night": "overcast-night"
+    },
+    {
+      "code": 3,
+      "cloud_cover": 60,
+      "direct_normal_irradiance_instant": null,
+      "day": "overcast",
+      "night": "overcast-night"
+    },
+    {
+      "code": 3,
+      "cloud_cover": 60,
+      "direct_normal_irradiance_instant": 0,
+      "day": "overcast",
+      "night": "overcast-night"
+    },
+    {
+      "code": 3,
+      "cloud_cover": 60,
+      "direct_normal_irradiance_instant": 120,
+      "day": "overcast",
+      "night": "overcast-night"
+    },
+    {
+      "code": 3,
+      "cloud_cover": 60,
+      "direct_normal_irradiance_instant": 120.0001,
+      "day": "cloudy",
+      "night": "overcast-night"
+    },
+    {
+      "code": 3,
+      "cloud_cover": 60,
+      "direct_normal_irradiance_instant": 1000,
+      "day": "cloudy",
+      "night": "overcast-night"
+    },
+    {
+      "code": 3,
+      "cloud_cover": 100,
+      "direct_normal_irradiance_instant": null,
+      "day": "overcast",
+      "night": "overcast-night"
+    },
+    {
+      "code": 3,
+      "cloud_cover": 100,
+      "direct_normal_irradiance_instant": 0,
+      "day": "overcast",
+      "night": "overcast-night"
+    },
+    {
+      "code": 3,
+      "cloud_cover": 100,
+      "direct_normal_irradiance_instant": 120,
+      "day": "overcast",
+      "night": "overcast-night"
+    },
+    {
+      "code": 3,
+      "cloud_cover": 100,
+      "direct_normal_irradiance_instant": 120.0001,
+      "day": "cloudy",
+      "night": "overcast-night"
+    },
+    {
+      "code": 3,
+      "cloud_cover": 100,
+      "direct_normal_irradiance_instant": 1000,
+      "day": "cloudy",
+      "night": "overcast-night"
+    }
+  ]
+}

@@ -1,59 +1,167 @@
 <!doctype html>
 <html lang="en">
-<head>
-<meta charset="utf-8">
-<meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no">
-<title>chris</title>
-<meta name="description" content="chris’ website">
-<meta name="theme-color" content="#111110">
-<meta property="og:type" content="website">
-<meta property="og:url" content="https://chrisshu.com/">
-<meta property="og:title" content="chris">
-<meta property="og:description" content="chris’ website">
-<meta property="og:image" content="https://chrisshu.com/og.png">
-<meta property="og:image:width" content="1200">
-<meta property="og:image:height" content="630">
-<meta name="twitter:card" content="summary_large_image">
-<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Ccircle cx='16' cy='16' r='16'/%3E%3C/svg%3E">
-<style>
-  :root {
-    --bg: oklch(0.18 0.002 106);
-    --fg: oklch(0.95 0.003 106);
-    --muted: oklch(0.71 0.007 106);
-    --line: oklch(0.41 0.006 106);
-  }
-  html { height: 100%; overflow: hidden; overscroll-behavior: none; touch-action: none; background: var(--bg); }
-  body {
-    margin: 0;
-    height: 100%;
-    display: grid;
-    place-items: center;
-    padding: min(48px, 8vh) 24px;
-    box-sizing: border-box;
-    color: var(--fg);
-    font: clamp(12px, min(max(17px, 4.5vw), 4.2vh, 2vw + 2vh), 18px)/1.6 system-ui, sans-serif;
-    -webkit-font-smoothing: antialiased;
-    -webkit-user-select: none;
-    user-select: none;
-  }
-  main { max-width: 34rem; }
-  h1 { font: inherit; font-weight: 600; margin: 0 0 1.2em; }
-  p { margin: 0; color: var(--muted); text-wrap: pretty; }
-  p + p { margin-top: 1.2em; }
-  a { color: var(--fg); text-decoration: underline 1px var(--line); text-underline-offset: 3px; }
-  a:hover { text-decoration-color: currentColor; }
-</style>
-</head>
-<body>
-<main>
-  <h1>Hey, I’m Chris.</h1>
-  <p>I’m currently at <a href="https://www.paradigm.xyz">Paradigm</a>, where I help people tackling hard problems build exceptional teams.</p>
-  <p>I’m particularly interested in robotics and hardware these days.</p>
-  <p>Outside of work, I’m building a homestead in the Napa mountains and learning as much as I can about the world.</p>
-  <p>You can reach me via <a href="mailto:chris@paradigm.xyz">email</a>.</p>
-</main>
-<script>
-  for (const e of ["gesturestart", "gesturechange"]) document.addEventListener(e, ev => ev.preventDefault(), { passive: false });
-</script>
-</body>
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+    <meta name="theme-color" content="#f9f9f9" />
+    <meta name="description" content="chris' website" />
+    <title>chris shu</title>
+    <link rel="canonical" href="https://chrisshu.com/" />
+    <meta property="og:type" content="website" />
+    <meta property="og:site_name" content="chris shu" />
+    <meta property="og:title" content="chris shu" />
+    <meta property="og:description" content="chris' website" />
+    <meta property="og:url" content="https://chrisshu.com/" />
+    <meta property="og:video" content="https://chrisshu.com/assets/og-cloudy-v117.mp4" />
+    <meta property="og:video:secure_url" content="https://chrisshu.com/assets/og-cloudy-v117.mp4" />
+    <meta property="og:video:type" content="video/mp4" />
+    <meta property="og:video:width" content="768" />
+    <meta property="og:video:height" content="432" />
+    <meta property="og:image" content="https://chrisshu.com/assets/og-cloudy-v117.jpg" />
+    <meta property="og:image:type" content="image/jpeg" />
+    <meta property="og:image:width" content="1200" />
+    <meta property="og:image:height" content="630" />
+    <meta property="og:image:alt" content="White clouds against a pale blue sky" />
+    <meta name="twitter:card" content="player" />
+    <meta name="twitter:title" content="chris shu" />
+    <meta name="twitter:description" content="chris' website" />
+    <meta name="twitter:player" content="https://chrisshu.com/preview-player.html" />
+    <meta name="twitter:player:width" content="768" />
+    <meta name="twitter:player:height" content="432" />
+    <meta name="twitter:player:stream" content="https://chrisshu.com/assets/og-cloudy-v117.mp4" />
+    <meta name="twitter:player:stream:content_type" content="video/mp4" />
+    <meta name="twitter:image" content="https://chrisshu.com/assets/og-cloudy-v117.jpg" />
+    <meta name="twitter:image:alt" content="White clouds against a pale blue sky" />
+    <link rel="icon" type="image/svg+xml" sizes="any" href="./assets/favicon.svg?v=weather-scenes-100" />
+    <script>
+      (() => {
+        // Old preview links must never pin the public page to outdated weather.
+        const url = new URL(location.href);
+        if (url.searchParams.has('scene') || url.searchParams.has('mode')) {
+          url.searchParams.delete('scene');
+          url.searchParams.delete('mode');
+          history.replaceState(history.state, '', url);
+        }
+        document.documentElement.dataset.scene = 'cloudy';
+      })();
+    </script>
+    <link rel="stylesheet" href="./style.css?v=weather-scenes-103" />
+    <script src="./weather.js?v=weather-scenes-102" defer></script>
+    <script src="./sky.js?v=weather-scenes-102" defer></script>
+    <script type="module" src="./dock-sounds.js?v=weather-scenes-79"></script>
+    <script src="./dock.js?v=weather-scenes-70" defer></script>
+  </head>
+  <body>
+    <main class="sky" aria-label="Blue sky with white clouds floating by" aria-description="Cloud expands the dock to show current SF weather; User opens information about Chris; Email opens a message to Chris. Space pauses or resumes the sky. Escape pauses it." aria-keyshortcuts="Space Escape">
+      <noscript><img class="scene-poster" src="./assets/clouds-poster.webp?v=weather-scenes-79" alt="White clouds across a blue sky" /></noscript>
+      <div class="scene-layer scene-cloudy" data-scene="cloudy">
+        <img class="scene-poster" data-src="./assets/clouds-poster.webp?v=weather-scenes-79" alt="" fetchpriority="high" />
+        <video id="sky-video" class="sky-scene" muted loop playsinline preload="none" disablepictureinpicture aria-label="White clouds drifting across a blue sky" hidden></video>
+      </div>
+      <div class="scene-layer scene-sunny" data-scene="sunny" aria-hidden="true">
+        <img class="scene-poster" data-src="./assets/sunny-poster.webp?v=weather-scenes-79" alt="" />
+        <video id="sunny-video" class="sky-scene" muted loop playsinline preload="none" disablepictureinpicture aria-label="A clear blue sky with bright sunlight" hidden></video>
+      </div>
+      <div class="scene-layer scene-overcast" data-scene="overcast" aria-hidden="true">
+        <img class="scene-poster" data-src="./assets/overcast-poster.webp?v=weather-scenes-79" alt="" />
+        <video id="overcast-video" class="sky-scene" muted loop playsinline preload="none" disablepictureinpicture aria-label="Soft gray overcast clouds drifting across a muted sky" hidden></video>
+      </div>
+      <div class="scene-layer scene-rain" data-scene="rain" aria-hidden="true">
+        <img class="scene-poster" data-src="./assets/rain-poster.webp?v=weather-scenes-79" alt="" />
+        <video id="rain-video" class="sky-scene" muted loop playsinline preload="none" disablepictureinpicture aria-label="Soft rain beneath an overcast sky" hidden></video>
+      </div>
+      <div class="scene-layer scene-fog" data-scene="fog" aria-hidden="true">
+        <div class="fog-atmosphere">
+          <img class="scene-poster" data-src="./assets/fog-poster.webp?v=weather-scenes-79" alt="" />
+          <video id="fog-video" class="sky-scene" muted loop playsinline preload="none" disablepictureinpicture aria-label="Soft fog and low marine clouds drifting across the sky" hidden></video>
+        </div>
+      </div>
+      <div class="scene-layer scene-night" data-scene="night" aria-hidden="true">
+        <img class="scene-poster" data-src="./assets/night-poster.webp?v=weather-scenes-79" alt="" />
+        <video id="night-video" class="sky-scene" muted loop playsinline preload="none" disablepictureinpicture aria-label="Night clouds lit by moonlight from the upper right" hidden></video>
+      </div>
+      <div class="scene-layer scene-clear-night" data-scene="clear-night" aria-hidden="true">
+        <img class="scene-poster" data-src="./assets/clear-night-poster.webp?v=weather-scenes-79" alt="" />
+        <video id="clear-night-video" class="sky-scene" muted loop playsinline preload="none" disablepictureinpicture aria-label="A clear deep blue night sky with soft light from the upper right" hidden></video>
+      </div>
+      <div class="scene-layer scene-overcast-night" data-scene="overcast-night" aria-hidden="true">
+        <img class="scene-poster" data-src="./assets/overcast-night-poster.webp?v=weather-scenes-79" alt="" />
+        <video id="overcast-night-video" class="sky-scene" muted loop playsinline preload="none" disablepictureinpicture aria-label="A dim blue-gray cloud ceiling drifting slowly through the night" hidden></video>
+      </div>
+      <div class="scene-layer scene-night-rain" data-scene="night-rain" aria-hidden="true">
+        <img class="scene-poster" data-src="./assets/night-rain-poster.webp?v=weather-scenes-79" alt="" />
+        <video id="night-rain-video" class="sky-scene" muted loop playsinline preload="none" disablepictureinpicture aria-label="Fine rain falling through a dark blue-gray night sky" hidden></video>
+      </div>
+      <div class="scene-layer scene-night-fog" data-scene="night-fog" aria-hidden="true">
+        <div class="fog-atmosphere">
+        <img class="scene-poster" data-src="./assets/night-fog-poster.webp?v=weather-scenes-79" alt="" />
+        <video id="night-fog-video" class="sky-scene" muted loop playsinline preload="none" disablepictureinpicture aria-label="Soft coastal fog moving through dim nighttime light" hidden></video>
+        </div>
+      </div>
+      <div class="icon-dock" role="group" aria-label="Dock" data-selection="cloud" data-panel-open="false">
+        <section id="dock-panel" class="dock-panel" aria-label="Current weather in San Francisco" aria-hidden="true" inert>
+          <div class="dock-panel-content">
+            <p id="weather-summary" class="weather-summary">Checking weather in San Francisco…</p>
+            <div id="bio-summary" class="bio-summary" tabindex="-1" hidden>
+              <p>Conversation and vibes at Paradigm. Building a homestead in the Napa mountains.</p>
+            </div>
+            <div class="dock-divider" aria-hidden="true"></div>
+          </div>
+        </section>
+        <div class="dock-track">
+          <button class="dock-item" type="button" data-view="cloud" aria-label="Cloud" aria-pressed="true" data-selected="true" aria-expanded="false" aria-controls="dock-panel">
+            <svg aria-hidden="true" focusable="false"
+              xmlns="http://www.w3.org/2000/svg"
+              width="20"
+              height="20"
+              viewBox="0 0 24 24"
+              fill="none"
+              stroke="currentColor"
+              stroke-width="1.5"
+              stroke-linecap="round"
+              stroke-linejoin="round"
+            >
+              <path d="M6.657 18c-2.572 0 -4.657 -2.007 -4.657 -4.483c0 -2.475 2.085 -4.482 4.657 -4.482c.393 -1.762 1.794 -3.2 3.675 -3.773c1.88 -.572 3.956 -.193 5.444 1c1.488 1.19 2.162 3.007 1.77 4.769h.99c1.913 0 3.464 1.56 3.464 3.486c0 1.927 -1.551 3.487 -3.465 3.487h-11.878" />
+            </svg>
+          </button>
+          <button class="dock-item" type="button" data-view="user" aria-label="User" aria-pressed="false" data-selected="false" aria-expanded="false" aria-controls="dock-panel">
+            <svg aria-hidden="true" focusable="false"
+              xmlns="http://www.w3.org/2000/svg"
+              width="20"
+              height="20"
+              viewBox="0 0 24 24"
+              fill="none"
+              stroke="currentColor"
+              stroke-width="1.5"
+              stroke-linecap="round"
+              stroke-linejoin="round"
+            >
+              <path d="M8 7a4 4 0 1 0 8 0a4 4 0 0 0 -8 0" />
+              <path d="M6 21v-2a4 4 0 0 1 4 -4h4a4 4 0 0 1 4 4v2" />
+            </svg>
+          </button>
+          <a class="dock-item" href="mailto:chris@paradigm.xyz" data-view="mail" aria-label="Email" data-selected="false">
+            <svg aria-hidden="true" focusable="false"
+              xmlns="http://www.w3.org/2000/svg"
+              width="20"
+              height="20"
+              viewBox="0 0 24 24"
+              fill="none"
+              stroke="currentColor"
+              stroke-width="1.5"
+              stroke-linecap="round"
+              stroke-linejoin="round"
+            >
+              <path d="M3 7a2 2 0 0 1 2 -2h14a2 2 0 0 1 2 2v10a2 2 0 0 1 -2 2h-14a2 2 0 0 1 -2 -2v-10" />
+              <path d="M3 7l9 6l9 -6" />
+            </svg>
+          </a>
+        </div>
+      </div>
+      <span id="weather-condition" class="visually-hidden" role="status"></span>
+      <span id="weather-freshness" class="visually-hidden"></span>
+      <span class="visually-hidden">Weather data by <a href="https://open-meteo.com/" tabindex="-1" target="_blank" rel="noopener noreferrer">Open-Meteo</a>.</span>
+      <span id="scene-status" class="visually-hidden" role="status"></span>
+    </main>
+  </body>
 </html>

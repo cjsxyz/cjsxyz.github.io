@@ -1,0 +1,50 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="robots" content="noindex">
+  <title>Sky scene previews</title>
+  <style>
+    :root { color-scheme: light; font: 15px/1.5 system-ui, sans-serif; color: #253340; background: #f6f7f8; }
+    * { box-sizing: border-box; }
+    body { margin: 0; padding: 28px clamp(14px, 3vw, 40px) 40px; }
+    main { max-width: 1440px; margin: auto; }
+    h1 { margin: 0 0 8px; font-size: clamp(24px, 3vw, 32px); font-weight: 600; letter-spacing: -.025em; }
+    .intro { max-width: 780px; margin: 0 0 12px; color: #586674; }
+    a { color: #345d7e; text-underline-offset: 3px; }
+    .toolbar { display: flex; gap: 16px; align-items: center; flex-wrap: wrap; margin: 18px 0 22px; }
+    button { border: 1px solid #c6cdd3; border-radius: 7px; background: white; color: #253340; padding: 7px 13px; font: inherit; cursor: pointer; }
+    button:hover { background: #edf1f4; }
+    button:focus-visible, a:focus-visible { outline: 2px solid #497b9f; outline-offset: 3px; }
+    button:disabled { opacity: .45; cursor: default; }
+    #preview-status { color: #586674; font-size: 13px; }
+    #preview-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 22px; }
+    .preview-card { min-width: 0; overflow: hidden; background: white; border: 1px solid #e0e4e8; border-radius: 10px; }
+    .preview-card header { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 13px 16px 4px; }
+    h2 { margin: 0; font-size: 16px; font-weight: 600; }
+    .preview-note { margin: 2px 16px 0; font-size: 12px; color: #667481; min-height: 18px; }
+    iframe { display: block; width: 100%; height: clamp(330px, 33vw, 450px); border: 0; background: white; }
+    .error { color: #9a3232 !important; }
+    @media (max-width: 760px) {
+      body { padding-top: 20px; }
+      #preview-grid { grid-template-columns: 1fr; gap: 18px; }
+      iframe { height: clamp(340px, 70vw, 470px); }
+    }
+  </style>
+  <script src="./preview.js?v=weather-scenes-102" defer></script>
+</head>
+<body>
+  <main>
+    <h1>All ten skies</h1>
+    <p class="intro">Compare the frosted dock against every scene. These are simulated previews, not current San Francisco weather. The dock and frame use the main site’s current styles; Cloud and User work in each preview.</p>
+    <div class="toolbar">
+      <button id="pause-all" type="button">Pause all</button>
+      <a href="./">Open the live weather page</a>
+      <span id="preview-status" role="status" aria-live="polite">Loading previews…</span>
+    </div>
+    <div id="preview-grid" aria-label="Sky scene previews"></div>
+    <noscript><p>Enable JavaScript to view the scene gallery.</p></noscript>
+  </main>
+</body>
+</html>

@@ -1,0 +1,99 @@
+{
+  "package": "cuelume",
+  "version": "0.2.8",
+  "official_site": "https://cuelume-site.pages.dev/",
+  "official_docs": "https://cuelume-site.pages.dev/docs/",
+  "official_repository": "https://github.com/danielwh2/cuelume",
+  "registry_metadata_url": "https://registry.npmjs.org/cuelume/0.2.8",
+  "tarball_url": "https://registry.npmjs.org/cuelume/-/cuelume-0.2.8.tgz",
+  "registry_integrity": "sha512-jnwAdMMUK4emaUWRd9l2RjpfixAMFOFrVkjoVK59FIfk7D3Vuvt+vBBJvU/J+2EiXrDlduialwDKJZorS5Nxqg==",
+  "registry_sha1": "330434940de52571293c6204c702b456b364b855",
+  "integrity_verification": "SHA-512 SRI and SHA-1 exactly match npm registry metadata",
+  "git_head": "2a1ba4fc1b67e8371c9f37e37a51e61353166335",
+  "retrieved_at_utc": "2026-10-22T23:38:06.800185+00:00",
+  "license": "MIT",
+  "copyright": "Copyright (c) 2026 Daniel Belyi",
+  "license_path": "../../licenses/cuelume.txt",
+  "installation_scripts_run": false,
+  "runtime_dependencies": {},
+  "selection": "The 10 unmodified modules required by the pinned audio/engine.js playback entrypoint are included. The unused public index and interactions/bind modules are excluded. No declarations, source maps, development dependencies, or npm install are included.",
+  "files": [
+    {
+      "path": "../../licenses/cuelume.txt",
+      "archive_path": "package/LICENSE",
+      "bytes": 1069,
+      "sha256": "c0d53cbcf3b4e9cfa23c0ce575a1568d34f763eaf74917fb525a61d5624752ca",
+      "unmodified": true
+    },
+    {
+      "path": "sounds/bubble.js",
+      "archive_path": "package/dist/sounds/bubble.js",
+      "bytes": 8533,
+      "sha256": "28134872052f9800e094681204647217d8bf5ba5a3ac34f57280093ec2c2efae",
+      "unmodified": true
+    },
+    {
+      "path": "sounds/context.js",
+      "archive_path": "package/dist/sounds/context.js",
+      "bytes": 5007,
+      "sha256": "82dfb71b4daa45b898004213a04a9c3bf52bd5303c818668fe19cf8077d01780",
+      "unmodified": true
+    },
+    {
+      "path": "audio/engine.js",
+      "archive_path": "package/dist/audio/engine.js",
+      "bytes": 7133,
+      "sha256": "6ae04f607cae25a30c5d665c8660559fb3e57a9cefabff224b237441f75f2dbf",
+      "unmodified": true
+    },
+    {
+      "path": "sounds/layers.js",
+      "archive_path": "package/dist/sounds/layers.js",
+      "bytes": 5806,
+      "sha256": "27313cc98f81d5fcd96a0cee3fc4b5f98aaa8857052a5b6dd420ddb263294ce9",
+      "unmodified": true
+    },
+    {
+      "path": "sounds/mech.js",
+      "archive_path": "package/dist/sounds/mech.js",
+      "bytes": 9323,
+      "sha256": "00eeb8d9f4e97ff39c4db1da15f53e8158efd6acdea94f6ec8fc286e65711fad",
+      "unmodified": true
+    },
+    {
+      "path": "audio/output.js",
+      "archive_path": "package/dist/audio/output.js",
+      "bytes": 5568,
+      "sha256": "769df8fb81c1e5dc54d43a2fe57165de6497ec3e1410aaf7f3e53a53b30ad690",
+      "unmodified": true
+    },
+    {
+      "path": "sounds/press.js",
+      "archive_path": "package/dist/sounds/press.js",
+      "bytes": 7735,
+      "sha256": "cb46bcfd206b261469538eb08612fb665b06f0fdbbf1bbb777229952b24d1f15",
+      "unmodified": true
+    },
+    {
+      "path": "sounds/recipes.js",
+      "archive_path": "package/dist/sounds/recipes.js",
+      "bytes": 11336,
+      "sha256": "11e36e4495ca589150644178151b607f910b85f74a0d2c684f32d34e619f0ac6",
+      "unmodified": true
+    },
+    {
+      "path": "audio/render.js",
+      "archive_path": "package/dist/audio/render.js",
+      "bytes": 7946,
+      "sha256": "74ae3786b61f770179d709e3661bf614f9e2919462115fc9f1a1e0a6c34d07fc",
+      "unmodified": true
+    },
+    {
+      "path": "sounds/themes.js",
+      "archive_path": "package/dist/sounds/themes.js",
+      "bytes": 620,
+      "sha256": "2814b3034a06e7a9299e19a39eee5aa6b5f8d63dd2db97faeadf306ea0adb5be",
+      "unmodified": true
+    }
+  ]
+}

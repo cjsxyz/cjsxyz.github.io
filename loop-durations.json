@@ -1,0 +1,246 @@
+{
+  "version": 46,
+  "note": "Wall-clock time before repeating at the website playback speed. Frame/container rounding can differ by a few milliseconds between formats.",
+  "scenes": [
+    {
+      "scene": "cloudy",
+      "title": "Cloudy",
+      "playback_rate": 0.5,
+      "displayed_loop_seconds": 188.4667,
+      "formats": {
+        "mp4": {
+          "duration_seconds": 94.233333,
+          "codec_name": "h264",
+          "width": 1920,
+          "height": 1080,
+          "pix_fmt": "yuv420p",
+          "avg_frame_rate": "60/1"
+        },
+        "webm": {
+          "duration_seconds": 94.234,
+          "codec_name": "vp9",
+          "width": 1920,
+          "height": 1080,
+          "pix_fmt": "yuv420p10le",
+          "avg_frame_rate": "60/1"
+        }
+      }
+    },
+    {
+      "scene": "sunny",
+      "title": "Sunny",
+      "playback_rate": 1.0,
+      "displayed_loop_seconds": 24.0,
+      "formats": {
+        "mp4": {
+          "duration_seconds": 24.0,
+          "codec_name": "h264",
+          "width": 1920,
+          "height": 1080,
+          "pix_fmt": "yuv420p",
+          "avg_frame_rate": "30/1"
+        },
+        "webm": {
+          "duration_seconds": 24.0,
+          "codec_name": "vp9",
+          "width": 1920,
+          "height": 1080,
+          "pix_fmt": "yuv420p10le",
+          "avg_frame_rate": "30/1"
+        }
+      }
+    },
+    {
+      "scene": "overcast",
+      "title": "Overcast",
+      "playback_rate": 1.0,
+      "displayed_loop_seconds": 15.6833,
+      "formats": {
+        "mp4": {
+          "duration_seconds": 15.683333,
+          "codec_name": "h264",
+          "width": 1920,
+          "height": 1080,
+          "pix_fmt": "yuv420p",
+          "avg_frame_rate": "60/1"
+        },
+        "webm": {
+          "duration_seconds": 15.683,
+          "codec_name": "vp9",
+          "width": 1920,
+          "height": 1080,
+          "pix_fmt": "yuv420p10le",
+          "avg_frame_rate": "60/1"
+        }
+      }
+    },
+    {
+      "scene": "rain",
+      "title": "Rain",
+      "playback_rate": 1.0,
+      "displayed_loop_seconds": 119.75,
+      "formats": {
+        "mp4": {
+          "duration_seconds": 119.75,
+          "codec_name": "h264",
+          "width": 1920,
+          "height": 1080,
+          "pix_fmt": "yuv420p",
+          "avg_frame_rate": "60/1"
+        },
+        "webm": {
+          "duration_seconds": 119.749,
+          "codec_name": "vp9",
+          "width": 1920,
+          "height": 1080,
+          "pix_fmt": "yuv420p10le",
+          "avg_frame_rate": "60/1"
+        }
+      }
+    },
+    {
+      "scene": "fog",
+      "title": "Fog / Marine Layer",
+      "playback_rate": 1.0,
+      "displayed_loop_seconds": 12.9667,
+      "formats": {
+        "mp4": {
+          "duration_seconds": 12.966667,
+          "codec_name": "h264",
+          "width": 1920,
+          "height": 1080,
+          "pix_fmt": "yuv420p",
+          "avg_frame_rate": "60/1"
+        },
+        "webm": {
+          "duration_seconds": 12.967,
+          "codec_name": "vp9",
+          "width": 1920,
+          "height": 1080,
+          "pix_fmt": "yuv420p10le",
+          "avg_frame_rate": "60/1"
+        }
+      }
+    },
+    {
+      "scene": "night",
+      "title": "Cloudy night",
+      "playback_rate": 0.5,
+      "displayed_loop_seconds": 87.0,
+      "formats": {
+        "mp4": {
+          "duration_seconds": 43.5,
+          "codec_name": "h264",
+          "width": 1920,
+          "height": 1080,
+          "pix_fmt": "yuv420p",
+          "avg_frame_rate": "60/1"
+        },
+        "webm": {
+          "duration_seconds": 43.5,
+          "codec_name": "vp9",
+          "width": 1920,
+          "height": 1080,
+          "pix_fmt": "yuv420p10le",
+          "avg_frame_rate": "60/1"
+        }
+      }
+    },
+    {
+      "scene": "clear-night",
+      "title": "Clear night",
+      "playback_rate": 1.0,
+      "displayed_loop_seconds": 24.0,
+      "formats": {
+        "mp4": {
+          "duration_seconds": 24.0,
+          "codec_name": "h264",
+          "width": 1920,
+          "height": 1080,
+          "pix_fmt": "yuv420p",
+          "avg_frame_rate": "30/1"
+        },
+        "webm": {
+          "duration_seconds": 24.0,
+          "codec_name": "vp9",
+          "width": 1920,
+          "height": 1080,
+          "pix_fmt": "yuv420p10le",
+          "avg_frame_rate": "30/1"
+        }
+      }
+    },
+    {
+      "scene": "overcast-night",
+      "title": "Overcast night",
+      "playback_rate": 1.0,
+      "displayed_loop_seconds": 15.6833,
+      "formats": {
+        "mp4": {
+          "duration_seconds": 15.683333,
+          "codec_name": "h264",
+          "width": 1920,
+          "height": 1080,
+          "pix_fmt": "yuv420p",
+          "avg_frame_rate": "60/1"
+        },
+        "webm": {
+          "duration_seconds": 15.683,
+          "codec_name": "vp9",
+          "width": 1920,
+          "height": 1080,
+          "pix_fmt": "yuv420p10le",
+          "avg_frame_rate": "60/1"
+        }
+      }
+    },
+    {
+      "scene": "night-rain",
+      "title": "Night rain",
+      "playback_rate": 1.0,
+      "displayed_loop_seconds": 119.75,
+      "formats": {
+        "mp4": {
+          "duration_seconds": 119.75,
+          "codec_name": "h264",
+          "width": 1920,
+          "height": 1080,
+          "pix_fmt": "yuv420p",
+          "avg_frame_rate": "60/1"
+        },
+        "webm": {
+          "duration_seconds": 119.749,
+          "codec_name": "vp9",
+          "width": 1920,
+          "height": 1080,
+          "pix_fmt": "yuv420p10le",
+          "avg_frame_rate": "60/1"
+        }
+      }
+    },
+    {
+      "scene": "night-fog",
+      "title": "Night fog",
+      "playback_rate": 1.0,
+      "displayed_loop_seconds": 12.9667,
+      "formats": {
+        "mp4": {
+          "duration_seconds": 12.966667,
+          "codec_name": "h264",
+          "width": 1920,
+          "height": 1080,
+          "pix_fmt": "yuv420p",
+          "avg_frame_rate": "60/1"
+        },
+        "webm": {
+          "duration_seconds": 12.966,
+          "codec_name": "vp9",
+          "width": 1920,
+          "height": 1080,
+          "pix_fmt": "yuv420p10le",
+          "avg_frame_rate": "60/1"
+        }
+      }
+    }
+  ]
+}
