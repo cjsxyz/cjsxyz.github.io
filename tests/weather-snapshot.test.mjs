@@ -352,13 +352,16 @@ async function buildFixture(t) {
   const files = {
     'index.html': `<!doctype html><html><head>
       <script src="./weather.js?v=test" async data-weather-startup></script>
-      </head><body><!-- WEATHER_STARTUP -->
-      ${sceneCases.map(([scene]) => `<div data-scene="${scene}"><img data-preview="./assets/${scene}.preview.webp" alt=""><video hidden></video></div>`).join('\n')}
+      <link rel="stylesheet" href="./style.css?v=test" />
+      </head><body>
+      <noscript><img class="scene-poster" src="./assets/generic-full.webp" alt="Generic cloudy fallback"></noscript>
+      ${sceneCases.map(([scene]) => `<div class="scene-layer scene-${scene}" data-scene="${scene}" aria-hidden="true">${scene.includes('fog') ? '<div class="fog-atmosphere">' : ''}<img class="scene-poster" data-preview="./assets/${scene}.preview.webp" alt=""><video hidden></video>${scene.includes('fog') ? '</div>' : ''}</div>`).join('\n')}
+      <!-- WEATHER_STARTUP -->
       </body></html>`,
     'weather.js': 'globalThis.fixtureWeatherLoaded = true; // </script> must remain inside script\n',
     'startup.js': 'globalThis.fixtureStartupLoaded = true;\n',
     'sky.js': `const scenes = {\n${sceneCases.map(([scene]) => `    '${scene}': { title: '${scene}', src: './assets/${scene}.mp4?v=1', webmSrc: './assets/${scene}.webm?v=1', rate: 0.75 },`).join('\n')}\n};\n`,
-    'style.css': 'body { margin: 0; }',
+    'style.css': `body { margin: 0; }\n/* Literal replacement characters: $& $' */\n.scene-layer { opacity: 0; }\n${sceneCases.map(([scene]) => `:root[data-scene="${scene}"] .scene-${scene} { opacity: 1; }`).join('\n')}\n:root[data-instant-switch="true"] .scene-layer { transition: none; }`,
     'preview.html': '<title>Preview</title>',
     'favicon.svg': '<svg/>',
     'og.png': 'social-preview',
@@ -377,6 +380,7 @@ async function buildFixture(t) {
     'hosting/private.conf': 'DO_NOT_PUBLISH',
     'edge/private.js': 'DO_NOT_PUBLISH',
     'assets/nested/extra.txt': 'asset',
+    'assets/generic-full.webp': 'generic-cloudy-fallback',
     'assets/.secret.txt': 'DO_NOT_PUBLISH',
     'vendor/package/index.js': 'export default true;',
     'licenses/vendor.txt': 'License text',
@@ -400,6 +404,28 @@ function embeddedJSON(html, id) {
   return body === undefined ? undefined : JSON.parse(body);
 }
 
+function attributes(tag) {
+  const result = {};
+  for (const match of tag.replace(/^<\w+\b/, '').matchAll(/([\w:-]+)(?:\s*=\s*(["'])(.*?)\2)?/g)) {
+    result[match[1]] = match[3] ?? true;
+  }
+  return result;
+}
+
+function sceneMarkup(html, scene) {
+  const layer = new RegExp(`(<div\\b[^>]*\\bclass="[^"]*\\bscene-layer\\b[^"]*"[^>]*\\bdata-scene="${scene}"[^>]*>)([\\s\\S]*?)<video\\b`).exec(html);
+  assert.ok(layer, `scene-layer for ${scene} exists`);
+  const poster = /<img\b[^>]*\bclass="[^"]*\bscene-poster\b[^"]*"[^>]*>/.exec(layer[2]);
+  assert.ok(poster, `scene-poster for ${scene} exists`);
+  return { layer: attributes(layer[1]), poster: attributes(poster[0]) };
+}
+
+function assertInlineStyles(html, css) {
+  const styles = [...html.matchAll(/<style\b[^>]*>([\s\S]*?)<\/style>/g)].map(match => match[1]);
+  assert.ok(styles.some(style => style.trim() === css.trim()), 'full CSS is inline');
+  assert.doesNotMatch(html, /<link\b[^>]*\bhref="[^" ]*style\.css(?:\?[^" ]*)?"/);
+}
+
 async function fileList(directory, prefix = '') {
   const result = [];
   for (const item of await readdir(directory, { withFileTypes: true })) {
@@ -410,7 +436,7 @@ async function fileList(directory, prefix = '') {
   return result.sort();
 }
 
-test('build inlines the selected scene and snapshot before startup for all ten scenes', async t => {
+test('build makes each selected scene visible without JavaScript and inlines one poster plus CSS', async t => {
   const fixture = await buildFixture(t);
   for (const [scene, now, overrides] of sceneCases) {
     const candidate = { ...snapshot(now, overrides), sourceRevision: revisionB };
@@ -420,12 +446,26 @@ test('build inlines the selected scene and snapshot before startup for all ten s
     assert.equal(result.snapshot.scene, scene);
     assert.deepEqual(embeddedJSON(html, 'initial-weather'), candidate);
     const media = embeddedJSON(html, 'initial-media');
-    assert.equal(media.scene, scene);
-    assert.equal(media.poster, `data:image/webp;base64,${Buffer.from(`fixture-poster:${scene}`).toString('base64')}`);
-    assert.equal(media.src, `./assets/${scene}.mp4?v=1`);
-    assert.equal(media.webmSrc, `./assets/${scene}.webm?v=1`);
-    assert.equal(media.rate, 0.75);
+    assert.deepEqual(media, { scene, src: `./assets/${scene}.mp4?v=1`, webmSrc: `./assets/${scene}.webm?v=1`, rate: 0.75 });
+    const root = attributes(/<html\b[^>]*>/.exec(html)[0]);
+    assert.equal(root['data-scene'], scene);
+    assert.equal(root['data-instant-switch'], 'true');
+    for (const [key] of sceneCases) {
+      const markup = sceneMarkup(html, key);
+      assert.equal(markup.layer['aria-hidden'], key === scene ? 'false' : 'true', key);
+      if (key === scene) {
+        assert.equal(markup.poster.src, `data:image/webp;base64,${Buffer.from(`fixture-poster:${scene}`).toString('base64')}`);
+        assert.ok(Object.hasOwn(markup.poster, 'data-initial-poster'));
+        assert.equal(markup.poster.fetchpriority, 'high');
+      } else {
+        assert.ok(!Object.hasOwn(markup.poster, 'src'), `inactive ${key} has no image request`);
+        assert.ok(!Object.hasOwn(markup.poster, 'data-initial-poster'));
+      }
+    }
+    assertInlineStyles(html, fixture.files['style.css']);
     assert.equal((html.match(/data:image\/webp;base64,/g) || []).length, 1);
+    assert.equal((html.match(/\sdata-initial-poster(?:[\s=>])/g) || []).length, 1);
+    assert.doesNotMatch(html, /generic-full\.webp/, 'the generic noscript image cannot cover the selected scene');
     assert.ok(html.indexOf('id="initial-weather"') < html.indexOf('fixtureWeatherLoaded'));
     assert.ok(html.indexOf('id="initial-media"') < html.indexOf('fixtureWeatherLoaded'));
     assert.ok(html.indexOf('fixtureWeatherLoaded') < html.indexOf('fixtureStartupLoaded'));
@@ -446,10 +486,67 @@ test('build omits stale or invalid inline weather while keeping the live startup
     assert.equal(result.snapshot, null);
     assert.equal(embeddedJSON(html, 'initial-weather'), undefined);
     assert.equal(embeddedJSON(html, 'initial-media'), undefined);
+    const root = attributes(/<html\b[^>]*>/.exec(html)[0]);
+    assert.ok(!Object.hasOwn(root, 'data-scene'));
+    assert.ok(!Object.hasOwn(root, 'data-instant-switch'));
+    assert.doesNotMatch(html, /data:image\/webp;base64,|\sdata-initial-poster(?:[\s=>])/);
+    assertInlineStyles(html, fixture.files['style.css']);
+    assert.match(html, /<noscript>[\s\S]*?generic-full\.webp[\s\S]*?<\/noscript>/);
+    for (const [scene] of sceneCases) assert.ok(!Object.hasOwn(sceneMarkup(html, scene).poster, 'src'));
     assert.match(html, /<script data-weather-startup>/);
     assert.match(html, /fixtureWeatherLoaded/);
     assert.match(html, /fixtureStartupLoaded/);
     assert.equal(JSON.parse(await readFile(path.join(fixture.output, 'weather-snapshot.json'), 'utf8')), null);
+  }
+});
+
+test('build safely handles closing-style text without allowing HTML to escape the inline CSS', async t => {
+  const fixture = await buildFixture(t);
+  await build({ ...fixture, now: noon });
+  const previous = await readFile(path.join(fixture.output, 'index.html'), 'utf8');
+  const css = '/* </StYlE><script id="css-breakout">unsafe()</script> */\nbody { margin: 0; }';
+  await writeFile(path.join(fixture.sourceRoot, 'style.css'), css);
+  let error;
+  try { await build({ ...fixture, now: noon }); }
+  catch (caught) { error = caught; }
+  if (error) {
+    assert.match(error.message, /style|css|unsafe|inline/i);
+    assert.equal(await readFile(path.join(fixture.output, 'index.html'), 'utf8'), previous);
+  } else {
+    const html = await readFile(path.join(fixture.output, 'index.html'), 'utf8');
+    const styles = [...html.matchAll(/<style\b[^>]*>([\s\S]*?)<\/style>/gi)];
+    assert.equal(styles.length, 1);
+    assert.match(styles[0][1], /css-breakout/);
+    assert.match(styles[0][1], /body \{ margin: 0; \}/, 'CSS stays inside its style element after the dangerous text');
+    const outsideStyles = html.replace(/<style\b[^>]*>[\s\S]*?<\/style>/gi, '');
+    assert.doesNotMatch(outsideStyles, /css-breakout/);
+  }
+});
+
+test('malformed scene, poster or stylesheet markup cannot replace a prior successful build', async t => {
+  const fixture = await buildFixture(t);
+  await build({ ...fixture, now: noon });
+  const previous = await readFile(path.join(fixture.output, 'index.html'), 'utf8');
+  const sentinel = path.join(fixture.output, 'preserve.txt');
+  await writeFile(sentinel, 'untouched');
+  const original = fixture.files['index.html'];
+  const selectedLayer = /<div class="scene-layer scene-cloudy"[^>]*>[\s\S]*?<\/div>/.exec(original)[0];
+  const variants = [
+    original.replace('<html>', ''),
+    original.replace(/<link rel="stylesheet"[^>]*>/, ''),
+    original.replace('<!-- WEATHER_STARTUP -->', ''),
+    original.replace('class="scene-layer scene-cloudy"', 'class="missing-layer"'),
+    original.replace(selectedLayer, selectedLayer.replace('class="scene-poster"', 'class="missing-poster"')),
+    original.replace('data-scene="cloudy"', 'data-scene="missing"'),
+    original.replace(selectedLayer, `${selectedLayer}${selectedLayer}`),
+    original.replace('<html>', '<html><html>'),
+    original.replace('<link rel="stylesheet" href="./style.css?v=test" />', '<link rel="stylesheet" href="./style.css?v=test" /><link rel="stylesheet" href="./style.css?v=duplicate" />'),
+  ];
+  for (const [index, html] of variants.entries()) {
+    await writeFile(path.join(fixture.sourceRoot, 'index.html'), html);
+    await assert.rejects(build({ ...fixture, now: noon }), `malformed fixture ${index}`);
+    assert.equal(await readFile(path.join(fixture.output, 'index.html'), 'utf8'), previous, `fixture ${index}`);
+    assert.equal(await readFile(sentinel, 'utf8'), 'untouched');
   }
 });
 

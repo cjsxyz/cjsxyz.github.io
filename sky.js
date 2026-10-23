@@ -194,9 +194,11 @@
       useCurrentWeather({ instant: !hasWeatherScene });
     } catch {
       weatherFailed = true;
-      // Only load the fallback after the first request fails. Later outages
-      // retain the existing scene while the readout reports unavailable data.
-      if (!hasWeatherScene) {
+      // Keep a published still during an outage without treating its expired
+      // snapshot as current weather or starting a potentially stale video.
+      if (!hasWeatherScene && scenes[selected].poster.hasAttribute('data-initial-poster')) {
+        status.textContent = 'Weather unavailable. Showing the last published sky.';
+      } else if (!hasWeatherScene) {
         hasWeatherScene = true;
         selectScene('cloudy', { instant: true });
       } else applyPlaybackPreference();
@@ -329,8 +331,8 @@
     refreshWeather();
   });
   clearPreviewURL();
-  // An uncached visit uses the lightweight CSS sky until weather arrives.
-  // A fresh cache can paint its actual scene immediately without a spare image.
+  // The published still is already visible before this controller loads.
+  // Only fresh weather starts playback; live data replaces an expired snapshot.
   if (!useCurrentWeather({ instant: true })) {
     sky.setAttribute('aria-label', 'Sky background while checking current weather');
     status.textContent = 'Checking current weather.';

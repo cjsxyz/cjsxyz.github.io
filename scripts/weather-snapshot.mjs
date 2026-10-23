@@ -143,6 +143,43 @@ export async function check({ output, force = false, fetchImpl = fetch, now = ()
 const jsonForHTML = value => JSON.stringify(value).replace(/[<>&\u2028\u2029]/g,
   character => `\\u${character.charCodeAt(0).toString(16).padStart(4, '0')}`);
 const inlineJavaScript = source => source.replace(/<\/script/gi, '<\\/script');
+const inlineCSS = source => source.replace(/<\/style/gi, '<\\/style');
+const attributeValue = (tag, name) => new RegExp(`\\s${name}\\s*=\\s*(?:"([^"]*)"|'([^']*)')`, 'i').exec(tag)?.slice(1).find(value => value !== undefined);
+const withoutAttribute = (tag, name) => tag.replace(new RegExp(`\\s${name}(?=\\s|=|/?>)(?:\\s*=\\s*(?:"[^"]*"|'[^']*'|[^\\s>]+))?`, 'gi'), '');
+function withAttribute(tag, name, value) {
+  const escaped = value === undefined ? '' : `="${String(value).replace(/&/g, '&amp;').replace(/"/g, '&quot;').replace(/</g, '&lt;')}"`;
+  return withoutAttribute(tag, name).replace(/\s*(\/?>)$/, ` ${name}${escaped}$1`);
+}
+
+function renderInitialScene(html, media) {
+  const roots = html.match(/<html\b[^>]*>/gi) || [];
+  if (roots.length !== 1) throw new Error('Expected exactly one HTML root for initial scene');
+  let rendered = html.replace(roots[0], () => withAttribute(withAttribute(roots[0], 'data-scene', media.scene), 'data-instant-switch', 'true'));
+  // The selected poster also works without JavaScript; the generic cloudy
+  // noscript image would otherwise request an unrelated, full-size asset.
+  rendered = rendered.replace(/<noscript\b[^>]*>[\s\S]*?<\/noscript>/gi, block => /\bscene-poster\b/.test(block) ? '' : block);
+  let currentScene, selectedLayers = 0, selectedPosters = 0;
+  rendered = rendered.replace(/<(?:div|img)\b[^>]*>/gi, tag => {
+    const classes = (attributeValue(tag, 'class') || '').split(/\s+/);
+    if (/^<div\b/i.test(tag) && classes.includes('scene-layer')) {
+      currentScene = attributeValue(tag, 'data-scene');
+      if (!currentScene) throw new Error('A scene layer is missing its scene name');
+      if (currentScene === media.scene) selectedLayers++;
+      return withAttribute(tag, 'aria-hidden', currentScene === media.scene ? 'false' : 'true');
+    }
+    if (/^<img\b/i.test(tag) && classes.includes('scene-poster') && currentScene) {
+      let image = withoutAttribute(withoutAttribute(tag, 'src'), 'data-initial-poster');
+      if (currentScene === media.scene) {
+        selectedPosters++;
+        image = withAttribute(withAttribute(withAttribute(image, 'src', media.poster), 'data-initial-poster'), 'fetchpriority', 'high');
+      }
+      return image;
+    }
+    return tag;
+  });
+  if (selectedLayers !== 1 || selectedPosters !== 1) throw new Error('Expected exactly one selected scene layer and poster');
+  return rendered;
+}
 
 async function initialMedia(sourceRoot, html, skySource, scene) {
   const definitions = {};
@@ -192,18 +229,24 @@ export async function build({ snapshotPath, output, sourceRoot = sourceDirectory
   } catch (error) { if (error.code !== 'ENOENT') throw error; }
   const candidate = JSON.parse(await readFile(snapshotPath, 'utf8'));
   const snapshot = validateSnapshot(candidate, now);
-  const [html, weatherSource, skySource, startupSource] = await Promise.all([
+  const [html, weatherSource, skySource, startupSource, styleSource] = await Promise.all([
     readFile(path.join(root, 'index.html'), 'utf8'), readFile(path.join(root, 'weather.js'), 'utf8'),
     readFile(path.join(root, 'sky.js'), 'utf8'), readFile(path.join(root, 'startup.js'), 'utf8'),
+    readFile(path.join(root, 'style.css'), 'utf8'),
   ]);
   if (!html.includes('<!-- WEATHER_STARTUP -->')) throw new Error('Missing WEATHER_STARTUP marker');
   const weatherTag = /<script\b[^>]*\bsrc="[^\"]*weather\.js(?:\?[^\"]*)?"[^>]*>\s*<\/script>/;
   if (!weatherTag.test(html)) throw new Error('Missing external weather.js script');
+  const styleTag = /<link\b(?=[^>]*\brel="stylesheet")(?=[^>]*\bhref="\.\/style\.css(?:\?[^\"]*)?")[^>]*>/g;
+  if ((html.match(styleTag) || []).length !== 1) throw new Error('Expected exactly one external style.css stylesheet');
   const media = snapshot ? await initialMedia(root, html, skySource, snapshot.scene) : null;
+  const mediaDescriptor = media ? { scene: media.scene, src: media.src, webmSrc: media.webmSrc, rate: media.rate } : null;
   const initial = snapshot
-    ? `<script id="initial-weather" type="application/json">${jsonForHTML(snapshot)}</script>\n    <script id="initial-media" type="application/json">${jsonForHTML(media)}</script>\n    ` : '';
-  let rendered = html.replace(weatherTag, `${initial}<script data-weather-startup>\n${inlineJavaScript(weatherSource)}\n</script>`);
-  rendered = rendered.replace('<!-- WEATHER_STARTUP -->', `<script data-initial-scene>\n${inlineJavaScript(startupSource)}\n</script>`);
+    ? `<script id="initial-weather" type="application/json">${jsonForHTML(snapshot)}</script>\n    <script id="initial-media" type="application/json">${jsonForHTML(mediaDescriptor)}</script>\n    ` : '';
+  let rendered = media ? renderInitialScene(html, media) : html;
+  rendered = rendered.replace(weatherTag, () => `${initial}<script data-weather-startup>\n${inlineJavaScript(weatherSource)}\n</script>`);
+  rendered = rendered.replace(styleTag, () => `<style data-site-style>\n${inlineCSS(styleSource)}\n</style>`);
+  rendered = rendered.replace('<!-- WEATHER_STARTUP -->', () => `<script data-initial-scene>\n${inlineJavaScript(startupSource)}\n</script>`);
   await rm(out, { recursive: true, force: true });
   await mkdir(out, { recursive: true });
   await writeFile(path.join(out, BUILD_MARKER), 'Generated site output; safe to rebuild.\n');

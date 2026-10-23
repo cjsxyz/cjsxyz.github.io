@@ -97,8 +97,13 @@ function setup({ cache = null, hidden = false, reduced = false, webm = true,
   if (initial) {
     elements['#initial-weather'] = Object.assign(new Element(), { textContent: JSON.stringify(initial) });
     elements['#initial-media'] = Object.assign(new Element(), { textContent: JSON.stringify({
-      ...sceneMedia[initial.scene], scene: initial.scene, poster: 'data:image/webp;base64,cHJldmlldw==',
+      ...sceneMedia[initial.scene], scene: initial.scene,
     }) });
+    if (posters[initial.scene]) {
+      root.dataset.scene = initial.scene;
+      posters[initial.scene].setAttribute('data-initial-poster', '');
+      posters[initial.scene].src = 'data:image/webp;base64,cHJldmlldw==';
+    }
   }
   doc.querySelector = selector => elements[selector] || layers[/data-scene="([^"]+)"/.exec(selector)?.[1]] || null;
   doc.querySelectorAll = selector => selector === '.scene-layer' ? Object.values(layers) : [];
@@ -417,16 +422,32 @@ const cached = changes => ({ current: { time: START / 1000, weather_code: 2, is_
       assert.equal(x.root.dataset.scene, 'fog'); assert.equal(x.root.dataset.instantSwitch, 'false');
     }
   });
-  await test('expired, future, mismatched and day-boundary snapshots cannot start old media', async () => {
+  await test('expired, future, mismatched and day-boundary snapshots keep their still but cannot start old video', async () => {
     const initial = { ...cached({ is_day: 0 }), version: 1, scene: 'overcast-night', validUntil: START + 2700000 };
     for (const changes of [
       { validUntil: START }, { fetchedAt: START - 2700001 }, { fetchedAt: START + 60001 },
       { validUntil: START + 2700001 }, { scene: 'sunny' }, { current: 'bad' }, { version: 2 },
     ]) {
       const x = setup({ boot: 'snapshot', initial: { ...initial, ...changes } }); await flush();
-      assert.deepEqual(x.loaded(), []); assert.deepEqual(x.hydrated(), []);
+      assert.deepEqual(x.loaded(), []);
+      const renderedScene = (changes.scene || initial.scene);
+      assert.deepEqual(x.hydrated(), [renderedScene]);
+      assert.equal(x.posters[renderedScene].sourceWrites.length, 1, 'parser-visible still was not fetched again');
+      assert.match(x.summary.textContent, /Checking weather/);
       await x.resolve(0, { weather_code: 61 }); assert.deepEqual(x.playing(), ['rain']);
     }
+  });
+  await test('an expired published still stays visible through an API outage without stale playback or stale weather text', async () => {
+    const initial = { ...cached({ is_day: 0 }), version: 1, scene: 'overcast-night', validUntil: START };
+    const x = setup({ boot: 'snapshot', initial }); await flush();
+    await x.reject(0);
+    assert.equal(x.root.dataset.scene, 'overcast-night');
+    assert.deepEqual(x.loaded(), []); assert.deepEqual(x.playing(), []);
+    assert.deepEqual(x.hydrated(), ['overcast-night']);
+    assert.match(x.summary.textContent, /Weather unavailable/);
+    assert.match(x.status.textContent, /last published sky/);
+    await x.refresh({ weather_code: 61 });
+    assert.equal(x.root.dataset.scene, 'rain'); assert.deepEqual(x.playing(), ['rain']);
   });
   await test('snapshot respects reduced motion and background tabs before the scene controller runs', async () => {
     const initial = { ...cached({ weather_code: 45 }), version: 1, scene: 'fog', validUntil: START + 2700000 };
