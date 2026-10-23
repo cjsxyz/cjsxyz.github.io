@@ -33,7 +33,7 @@
     <meta name="twitter:image" content="https://chrisshu.com/assets/og-cloudy-v117.jpg" />
     <meta name="twitter:image:alt" content="White clouds against a pale blue sky" />
     <link rel="preconnect" href="https://api.open-meteo.com" crossorigin />
-    <script src="./weather.js?v=weather-scenes-118" async fetchpriority="high" data-weather-startup></script>
+    <script src="./weather.js?v=weather-scenes-122" async fetchpriority="high" data-weather-startup></script>
     <link rel="icon" type="image/svg+xml" sizes="any" href="./assets/favicon.svg?v=weather-scenes-100" />
     <script>
       (() => {
@@ -44,11 +44,12 @@
           url.searchParams.delete('mode');
           history.replaceState(history.state, '', url);
         }
-        document.documentElement.dataset.scene = 'cloudy';
+        const initial = window.SFWeather?.readInitial();
+        document.documentElement.dataset.scene = initial?.scene || 'cloudy';
       })();
     </script>
     <link rel="stylesheet" href="./style.css?v=weather-scenes-118" />
-    <script src="./sky.js?v=weather-scenes-118" defer></script>
+    <script src="./sky.js?v=weather-scenes-122" defer></script>
     <script type="module" src="./dock-sounds.js?v=weather-scenes-79"></script>
     <script src="./dock.js?v=weather-scenes-120" defer></script>
   </head>
@@ -99,6 +100,7 @@
         <video id="night-fog-video" class="sky-scene" muted loop playsinline preload="none" disablepictureinpicture aria-label="Soft coastal fog moving through dim nighttime light" hidden></video>
         </div>
       </div>
+      <!-- WEATHER_STARTUP -->
       <div class="icon-dock" role="group" aria-label="Dock" data-selection="cloud" data-panel-open="false">
         <section id="dock-panel" class="dock-panel" aria-label="Current weather in San Francisco" aria-hidden="true" inert>
           <div class="dock-panel-content">

@@ -23,9 +23,14 @@
   let refreshTimer;
   let weatherFailed = false;
   let hasWeatherScene = false;
+  const initialWeather = weather.readInitial();
+  if (initialWeather) {
+    current = initialWeather.current;
+    fetchedAt = initialWeather.fetchedAt;
+  }
   try {
     const cached = JSON.parse(localStorage.getItem(cacheKey));
-    if (weather.isFresh(cached?.current) && Number.isFinite(cached.fetchedAt) && cached.fetchedAt <= Date.now()) {
+    if (!initialWeather && weather.isFresh(cached?.current) && Number.isFinite(cached.fetchedAt) && cached.fetchedAt <= Date.now()) {
       current = cached.current;
       fetchedAt = cached.fetchedAt;
     }
@@ -49,11 +54,12 @@
   function loadPoster(scene, { fullQuality = false } = {}) {
     const src = fullQuality || !wantsToPlay || scene.failed
       ? scene.poster.dataset.src : scene.poster.dataset.preview;
-    if (scene.poster.getAttribute('src') === src) return;
+    if (scene.poster.getAttribute('src') === src && scene.posterAttempt === src) return;
+    scene.posterAttempt = src;
     scene.posterReady = false;
     scene.posterFailed = false;
     scene.poster.fetchPriority = 'high';
-    scene.poster.src = src;
+    if (scene.poster.getAttribute('src') !== src) scene.poster.src = src;
     scene.poster.decode().then(() => {
       if (scene.poster.getAttribute('src') !== src) return;
       scene.posterReady = scene.poster.naturalWidth > 0;
@@ -81,7 +87,7 @@
     for (const [key, scene] of Object.entries(scenes)) {
       const video = scene.video;
       if (hasWeatherScene && key === selected && wantsToPlay && !document.hidden && !scene.failed) {
-        video.hidden = video.readyState < 2;
+        video.hidden = video.readyState < 2 && video.dataset.startupReady !== 'true';
         if (!video.getAttribute('src') || scene.needsFallback) {
           video.hidden = true;
           video.src = scene.preferredSrc;
@@ -177,10 +183,15 @@
       if (result.error) throw result.error;
       if (!weather.isFresh(result.current)) throw new Error('Startup weather has expired');
       current = result.current;
+      // The snapshot uses sunrise/sunset at build time; a time-bucketed API
+      // reading must not undo that phase correction at the same observation time.
+      if (initialWeather && weather.readInitial() && current.time * 1000 <= initialWeather.fetchedAt) {
+        current = { ...current, is_day: initialWeather.current.is_day };
+      }
       fetchedAt = result.fetchedAt;
       weatherFailed = false;
       try { localStorage.setItem(cacheKey, JSON.stringify({ current, fetchedAt })); } catch { /* Optional cache. */ }
-      useCurrentWeather();
+      useCurrentWeather({ instant: !hasWeatherScene });
     } catch {
       weatherFailed = true;
       // Only load the fallback after the first request fails. Later outages
@@ -244,7 +255,7 @@
     video.addEventListener('loadeddata', showVideoFrame);
     video.addEventListener('playing', showVideoFrame);
     video.addEventListener('pause', updateState);
-    video.addEventListener('error', () => {
+    scene.handleVideoError = () => {
       // Ignore unrequested sources and duplicate errors while a retry waits
       // for the scene to become active or motion to be enabled again.
       if (scene.failed || scene.needsFallback || !video.getAttribute('src')) return;
@@ -263,7 +274,8 @@
       scene.reveal?.();
       if (key === selected) status.textContent = `${scene.title} sky. Showing a still image because the video is unavailable.`;
       updateState();
-    });
+    };
+    video.addEventListener('error', scene.handleVideoError);
   }
 
   portraitQuery.addEventListener('change', event => {
@@ -322,6 +334,11 @@
   if (!useCurrentWeather({ instant: true })) {
     sky.setAttribute('aria-label', 'Sky background while checking current weather');
     status.textContent = 'Checking current weather.';
+  }
+  // A parser-started video can fail before this deferred controller attaches.
+  // Process its recorded error once all scene elements and sources are ready.
+  for (const scene of Object.values(scenes)) {
+    if (scene.video.error) scene.handleVideoError();
   }
   showWeather();
   // Fetch on every page load, even if a cached scene can paint immediately.

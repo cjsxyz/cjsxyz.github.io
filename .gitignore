@@ -2,3 +2,5 @@
 .openai/
 __pycache__/
 *.py[cod]
+_site/
+weather-candidate.json

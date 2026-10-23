@@ -1,0 +1,111 @@
+name: Publish site with recent weather
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+  schedule:
+    # Offset from the top of the hour; GitHub schedules are best effort.
+    - cron: '2-57/5 * * * *'
+
+permissions:
+  contents: read
+
+concurrency:
+  group: pages
+  # Finish an active deployment; GitHub may replace an older pending run.
+  cancel-in-progress: false
+
+jobs:
+  check:
+    name: Check whether weather needs publishing
+    if: github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    timeout-minutes: 3
+    outputs:
+      should_deploy: ${{ steps.weather.outputs.should_deploy }}
+    steps:
+      - name: Check out weather checker only
+        uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+        with:
+          persist-credentials: false
+          sparse-checkout-cone-mode: false
+          sparse-checkout: |
+            /scripts/weather-snapshot.mjs
+            /weather.js
+
+      - name: Set up Node.js
+        uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6
+        with:
+          node-version: '22'
+          package-manager-cache: false
+
+      - name: Check current weather
+        id: weather
+        shell: bash
+        run: |
+          args=(check --output weather-candidate.json)
+          if [[ "$GITHUB_EVENT_NAME" != "schedule" ]]; then
+            args+=(--force)
+          fi
+          node scripts/weather-snapshot.mjs "${args[@]}"
+
+      - name: Pass the small snapshot to the deployment job
+        if: steps.weather.outputs.should_deploy == 'true'
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7
+        with:
+          name: weather-snapshot
+          path: weather-candidate.json
+          if-no-files-found: error
+          retention-days: 1
+
+  deploy:
+    name: Build and publish the site
+    needs: check
+    if: needs.check.outputs.should_deploy == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    permissions:
+      contents: read
+      pages: write
+      id-token: write
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - name: Check out the site
+        uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+        with:
+          persist-credentials: false
+
+      - name: Set up Node.js
+        uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6
+        with:
+          node-version: '22'
+          package-manager-cache: false
+
+      - name: Download this run's checked snapshot
+        uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8
+        with:
+          name: weather-snapshot
+          path: .
+          digest-mismatch: error
+
+      - name: Check weather startup and dock behavior
+        run: |
+          node tests/startup.cjs
+          node tests/dock-copy.cjs
+          node --test tests/weather-snapshot.test.mjs
+
+      - name: Build the publish directory
+        run: node scripts/weather-snapshot.mjs build --snapshot weather-candidate.json --output _site
+
+      - name: Upload the complete site
+        uses: actions/upload-pages-artifact@fc324d3547104276b827a68afc52ff2a11cc49c9 # v5
+        with:
+          path: _site
+          retention-days: 1
+
+      - name: Deploy GitHub Pages
+        id: deployment
+        uses: actions/deploy-pages@368f82528645a54fb793d4d04e342629a3f51346 # v5

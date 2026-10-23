@@ -1,5 +1,7 @@
 (() => {
   'use strict';
+  const host = typeof window === 'undefined' ? globalThis : window;
+  const page = typeof document === 'undefined' ? null : document;
 
   // Open-Meteo: https://open-meteo.com/en/docs (fields and WMO codes verified 2026-10-22).
   // Current values are model estimates; Unix timestamps remain UTC even with an SF timezone.
@@ -56,6 +58,23 @@
     }
   }
 
+  function readInitial() {
+    try {
+      const node = page?.querySelector('#initial-weather');
+      if (!node) return null;
+      const value = JSON.parse(node.textContent);
+      const now = Date.now();
+      if (value.version !== 1 || !Number.isFinite(value.fetchedAt)
+        || value.fetchedAt > now + 60000 || now - value.fetchedAt > 45 * 60 * 1000
+        || !Number.isFinite(value.validUntil) || value.validUntil <= now
+        || value.validUntil > value.fetchedAt + 45 * 60 * 1000
+        || !isFresh(value.current, now)) return null;
+      const current = normalize(value.current);
+      if (value.scene !== select(current)) return null;
+      return { current, fetchedAt: value.fetchedAt, scene: value.scene };
+    } catch { return null; }
+  }
+
   function select(current) {
     const c = normalize(current);
     // Drizzle and thunderstorms share the rain visuals, without lightning or hail.
@@ -109,7 +128,7 @@
   // Start during HTML parsing, before the deferred scene controller. Resolve
   // failures as data so an early rejection never becomes an unhandled promise.
   let startupRequest = null;
-  if (document.currentScript?.hasAttribute('data-weather-startup') && !document.hidden) {
+  if (page?.currentScript?.hasAttribute('data-weather-startup') && !page.hidden) {
     const controller = new AbortController();
     const timeout = setTimeout(() => controller.abort(), 10000);
     startupRequest = {
@@ -121,8 +140,8 @@
     };
   }
 
-  window.SFWeather = Object.freeze({
-    endpoint, refreshMs, fetchCurrent, isFresh, summarize,
+  host.SFWeather = Object.freeze({
+    endpoint, refreshMs, fetchCurrent, isFresh, summarize, normalize, readInitial,
     takeStartupRequest() {
       const request = startupRequest;
       startupRequest = null;
@@ -131,5 +150,5 @@
     pickScene: select,
     describe: current => conditionLabels[normalize(current).weather_code],
   });
-  window.dispatchEvent(new Event('sf-weather-ready'));
+  if (page) host.dispatchEvent(new Event('sf-weather-ready'));
 })();

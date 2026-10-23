@@ -9,6 +9,8 @@ const assert = require('node:assert/strict');
 const site = path.resolve(__dirname, '..');
 const weatherSource = fs.readFileSync(path.join(site, 'weather.js'), 'utf8');
 const skySource = fs.readFileSync(path.join(site, 'sky.js'), 'utf8');
+const startupSource = fs.readFileSync(path.join(site, 'startup.js'), 'utf8');
+const sceneMedia = vm.runInNewContext(`(${/const scenes = (\{[\s\S]*?\n  \});/.exec(skySource)[1]})`);
 const markup = fs.readFileSync(path.join(site, 'index.html'), 'utf8');
 const scenes = [...skySource.matchAll(/^    (?:([\w-]+)|['"]([\w-]+)['"]): \{ title:/gm)].map(m => m[1] || m[2]);
 const assets = Object.fromEntries([...markup.matchAll(/data-scene="([^"]+)"[^>]*>[\s\S]*?<img\b([^>]+)>/g)].map(m => [m[1], {
@@ -79,7 +81,7 @@ class Video extends Element {
 
 function setup({ cache = null, hidden = false, reduced = false, webm = true,
   automaticPosters = true, portrait = false, boot = 'weather-first', startup = true,
-  storageThrows = false } = {}) {
+  storageThrows = false, initial = null } = {}) {
   let now = START, nextTimer = 0;
   const root = new Element(), doc = new Element(), win = new Element();
   const motion = new Element(), viewport = new Element();
@@ -92,7 +94,14 @@ function setup({ cache = null, hidden = false, reduced = false, webm = true,
     querySelector: selector => selector === 'video' ? videos[key] : posters[key],
   })]));
   const elements = Object.fromEntries(['.sky', '#scene-status', '#weather-condition', '#weather-freshness', '#weather-summary'].map(key => [key, new Element()]));
+  if (initial) {
+    elements['#initial-weather'] = Object.assign(new Element(), { textContent: JSON.stringify(initial) });
+    elements['#initial-media'] = Object.assign(new Element(), { textContent: JSON.stringify({
+      ...sceneMedia[initial.scene], scene: initial.scene, poster: 'data:image/webp;base64,cHJldmlldw==',
+    }) });
+  }
   doc.querySelector = selector => elements[selector] || layers[/data-scene="([^"]+)"/.exec(selector)?.[1]] || null;
+  doc.querySelectorAll = selector => selector === '.scene-layer' ? Object.values(layers) : [];
   const timers = new Map(), requests = [], writes = [];
   const location = { href: 'https://chrisshu.com/' };
   const history = { state: null, replaceState(state, title, url) { this.state = state; location.href = String(url); } };
@@ -123,13 +132,15 @@ function setup({ cache = null, hidden = false, reduced = false, webm = true,
     vm.runInContext(weatherSource, context, { filename: 'weather.js' }); doc.currentScript = null;
   };
   const runSky = () => vm.runInContext(skySource, context, { filename: 'sky.js' });
+  const runInitial = () => vm.runInContext(startupSource, context, { filename: 'startup.js' });
   if (boot === 'weather-first') { runWeather(); runSky(); }
+  else if (boot === 'snapshot') { runWeather(); runInitial(); runSky(); }
   else if (boot === 'sky-first') runSky();
   else if (boot === 'weather-only') runWeather();
   const current = changes => ({ time: Math.floor(now / 1000), weather_code: 2, is_day: 1,
     temperature_2m: 60, cloud_cover: 62, direct_normal_irradiance_instant: 600, ...changes });
   return {
-    root, doc, win, motion, viewport, videos, posters, layers, elements, requests, writes, runWeather, runSky, current,
+    root, doc, win, motion, viewport, videos, posters, layers, elements, requests, writes, runWeather, runSky, runInitial, current,
     summary: elements['#weather-summary'], status: elements['#scene-status'], get now() { return now; },
     hydrated: () => scenes.filter(key => posters[key].src),
     loaded: () => scenes.filter(key => videos[key].src),
@@ -389,6 +400,62 @@ const cached = changes => ({ current: { time: START / 1000, weather_code: 2, is_
     assert.match(video.src, /rain\.mp4\?/); video.fail(); await flush();
     assert.equal(video.sourceWrites.length, 3); assert.equal(x.posters.rain.src, assets.rain.full);
     assert.equal(video.hidden, true); assert.deepEqual(x.playing(), []);
+  });
+  await test('embedded weather starts only its video before API completion and is adopted without a restart', async () => {
+    const initial = { ...cached({ weather_code: 61 }), version: 1, scene: 'rain', validUntil: START + 2700000 };
+    for (const portrait of [false, true]) for (const webm of [false, true]) {
+      const x = setup({ boot: 'snapshot', initial, portrait, webm }); await flush();
+      assert.equal(x.requests.length, 1, 'live weather still checks in background');
+      assert.equal(x.root.dataset.scene, 'rain'); assert.deepEqual(x.loaded(), ['rain']);
+      assert.equal(x.videos.rain.sourceWrites.length, 1); assert.equal(x.posters.rain.sourceWrites.length, 1);
+      assert.match(x.posters.rain.src, /^data:image\/webp;base64,/);
+      assert.equal(x.root.dataset.instantSwitch, 'true');
+      x.videos.rain.currentTime = 2;
+      await x.resolve(0, { weather_code: 61 });
+      assert.equal(x.videos.rain.sourceWrites.length, 1); assert.equal(x.videos.rain.currentTime, 2);
+      await x.refresh({ weather_code: 45 }); assert.deepEqual(x.playing(), ['fog']);
+      assert.equal(x.root.dataset.scene, 'fog'); assert.equal(x.root.dataset.instantSwitch, 'false');
+    }
+  });
+  await test('expired, future, mismatched and day-boundary snapshots cannot start old media', async () => {
+    const initial = { ...cached({ is_day: 0 }), version: 1, scene: 'overcast-night', validUntil: START + 2700000 };
+    for (const changes of [
+      { validUntil: START }, { fetchedAt: START - 2700001 }, { fetchedAt: START + 60001 },
+      { validUntil: START + 2700001 }, { scene: 'sunny' }, { current: 'bad' }, { version: 2 },
+    ]) {
+      const x = setup({ boot: 'snapshot', initial: { ...initial, ...changes } }); await flush();
+      assert.deepEqual(x.loaded(), []); assert.deepEqual(x.hydrated(), []);
+      await x.resolve(0, { weather_code: 61 }); assert.deepEqual(x.playing(), ['rain']);
+    }
+  });
+  await test('snapshot respects reduced motion and background tabs before the scene controller runs', async () => {
+    const initial = { ...cached({ weather_code: 45 }), version: 1, scene: 'fog', validUntil: START + 2700000 };
+    for (const options of [{ reduced: true }, { hidden: true }]) {
+      const x = setup({ boot: 'snapshot', initial, ...options }); await flush();
+      assert.deepEqual(x.loaded(), []); assert.equal(x.root.dataset.scene, 'fog');
+      if (options.reduced) assert.equal(x.posters.fog.src, assets.fog.full);
+      else { assert.equal(x.requests.length, 0); x.visible(true); assert.deepEqual(x.loaded(), ['fog']); }
+    }
+  });
+  await test('an early failed video advances to MP4 when the deferred controller arrives', async () => {
+    const initial = { ...cached({ weather_code: 61 }), version: 1, scene: 'rain', validUntil: START + 2700000 };
+    const x = setup({ boot: 'weather-only', initial }); x.runInitial();
+    x.videos.rain.error = { code: 4 }; x.videos.rain.fail(); x.runSky(); await flush();
+    assert.match(x.videos.rain.src, /rain\.mp4\?/);
+    assert.equal(x.videos.rain.sourceWrites.length, 2);
+  });
+  await test('time-bucketed live data cannot reverse the snapshot sunrise correction', async () => {
+    const initial = { ...cached({ weather_code: 0, cloud_cover: 0 }), version: 1, scene: 'sunny', validUntil: START + 2700000 };
+    const x = setup({ boot: 'snapshot', initial }); await flush();
+    await x.resolve(0, { weather_code: 0, cloud_cover: 0, is_day: 0 });
+    assert.equal(x.root.dataset.scene, 'sunny');
+    await x.tick(300000); await x.resolve(1, { weather_code: 0, cloud_cover: 0, is_day: 0 });
+    assert.equal(x.root.dataset.scene, 'clear-night', 'a newer provider observation takes over');
+  });
+  await test('first live scene has no startup fade but later changes retain transitions', async () => {
+    const x = setup(); await x.resolve(0, { weather_code: 61 });
+    assert.equal(x.root.dataset.instantSwitch, 'true');
+    await x.refresh({ weather_code: 45 }); assert.equal(x.root.dataset.instantSwitch, 'false');
   });
   await test('no asynchronous code path emits an unhandled rejection', async () => {
     await flush(); assert.deepEqual(unhandled.map(error => String(error)), []);
