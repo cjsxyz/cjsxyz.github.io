@@ -175,7 +175,7 @@ async function test(name, body) {
   catch (error) { failures.push({ name, error: error.stack }); console.error(`FAIL ${name}\n${error.stack}`); }
 }
 const cached = changes => ({ current: { time: START / 1000, weather_code: 2, is_day: 1,
-  temperature_2m: 60, cloud_cover: 62, direct_normal_irradiance_instant: 600, ...changes }, fetchedAt: START });
+  temperature_2m: 60, cloud_cover: 62, direct_normal_irradiance_instant: 600, ...changes }, fetchedAt: START, weatherPolicy: 'east-cut-nbm-nearest-v1' });
 
 (async () => {
   await test('HTML starts async weather early and keeps all scene media deferred', async () => {
@@ -356,7 +356,9 @@ const cached = changes => ({ current: { time: START / 1000, weather_code: 2, is_
   });
   await test('expired or malformed cache does not hydrate old scene and storage failures do not stop live weather', async () => {
     for (const options of [
-      { cache: cached({ time: START / 1000 - 7201, is_day: 0 }) },
+      { cache: cached({ time: START / 1000 - 1800, is_day: 0 }) },
+      { cache: { ...cached({ is_day: 0 }), weatherPolicy: undefined } },
+      { cache: { ...cached({ is_day: 0 }), weatherPolicy: 'old-central-sf-hrrr' } },
       { cache: { current: 'bad', fetchedAt: START } }, { storageThrows: true },
     ]) {
       const x = setup(options); assert.deepEqual(x.hydrated(), []); await x.resolve(0, { weather_code: 45 });
@@ -375,6 +377,16 @@ const cached = changes => ({ current: { time: START / 1000, weather_code: 2, is_
     await x.tick(59999); assert.equal(x.requests.length, 2); await x.tick(1); assert.equal(x.requests.length, 3);
     await x.resolve(2, { weather_code: 51 }); assert.equal(x.root.dataset.scene, 'rain');
   });
+  await test('an outage cannot keep an expired estimate playing or label it current', async () => {
+    const x = setup(); await x.resolve(0, { weather_code: 61 });
+    assert.deepEqual(x.playing(), ['rain']);
+    await x.tick(1800000);
+    assert.deepEqual(x.playing(), []);
+    assert.doesNotMatch(x.summary.textContent, /^Currently/);
+    await x.refresh({ weather_code: 0, cloud_cover: 12, direct_normal_irradiance_instant: 610 });
+    assert.equal(x.root.dataset.scene, 'sunny');
+    assert.deepEqual(x.playing(), ['sunny']);
+  });
   await test('actual parser rejects API errors, malformed values and stale times without uncaught failures', async () => {
     for (const kind of ['http', 'provider', 'temperature', 'stale']) {
       const x = setup();
@@ -382,6 +394,7 @@ const cached = changes => ({ current: { time: START / 1000, weather_code: 2, is_
       else if (kind === 'provider') await x.response(0, { error: true });
       else await x.resolve(0, kind === 'stale' ? { time: START / 1000 - 7201 } : { temperature_2m: '60' });
       assert.equal(x.summary.textContent, 'Weather unavailable in San Francisco'); assert.deepEqual(x.hydrated(), ['cloudy']);
+      assert.deepEqual(x.playing(), [], 'unknown weather is a still, never a made-up current video');
     }
   });
   await test('all ten scenes use only their confirmed poster and correct viewport/codec tier', async () => {
@@ -407,7 +420,7 @@ const cached = changes => ({ current: { time: START / 1000, weather_code: 2, is_
     assert.equal(video.hidden, true); assert.deepEqual(x.playing(), []);
   });
   await test('embedded weather starts only its video before API completion and is adopted without a restart', async () => {
-    const initial = { ...cached({ weather_code: 61 }), version: 1, scene: 'rain', validUntil: START + 2700000 };
+    const initial = { ...cached({ weather_code: 61 }), version: 1, scene: 'rain', validUntil: START + 1800000 };
     for (const portrait of [false, true]) for (const webm of [false, true]) {
       const x = setup({ boot: 'snapshot', initial, portrait, webm }); await flush();
       assert.equal(x.requests.length, 1, 'live weather still checks in background');
@@ -422,11 +435,21 @@ const cached = changes => ({ current: { time: START / 1000, weather_code: 2, is_
       assert.equal(x.root.dataset.scene, 'fog'); assert.equal(x.root.dataset.instantSwitch, 'false');
     }
   });
+  await test('newer cached weather prevents an older published scene from starting its video', async () => {
+    const initial = { ...cached({ time: START / 1000 - 900, weather_code: 3, direct_normal_irradiance_instant: 20 }),
+      version: 1, scene: 'overcast', validUntil: START + 900000 };
+    const cache = cached({ weather_code: 0, cloud_cover: 12, direct_normal_irradiance_instant: 610 });
+    const x = setup({ boot: 'snapshot', initial, cache }); await flush();
+    assert.equal(x.root.dataset.scene, 'sunny');
+    assert.deepEqual(x.loaded(), ['sunny']);
+    assert.match(x.summary.textContent, /sunny/);
+  });
   await test('expired, future, mismatched and day-boundary snapshots keep their still but cannot start old video', async () => {
-    const initial = { ...cached({ is_day: 0 }), version: 1, scene: 'overcast-night', validUntil: START + 2700000 };
+    const initial = { ...cached({ is_day: 0 }), version: 1, scene: 'overcast-night', validUntil: START + 1800000 };
     for (const changes of [
       { validUntil: START }, { fetchedAt: START - 2700001 }, { fetchedAt: START + 60001 },
-      { validUntil: START + 2700001 }, { scene: 'sunny' }, { current: 'bad' }, { version: 2 },
+      { validUntil: START + 1800001 }, { scene: 'sunny' }, { current: 'bad' }, { version: 2 },
+      { weatherPolicy: undefined }, { weatherPolicy: 'old-central-sf-hrrr' },
     ]) {
       const x = setup({ boot: 'snapshot', initial: { ...initial, ...changes } }); await flush();
       assert.deepEqual(x.loaded(), []);
@@ -445,12 +468,12 @@ const cached = changes => ({ current: { time: START / 1000, weather_code: 2, is_
     assert.deepEqual(x.loaded(), []); assert.deepEqual(x.playing(), []);
     assert.deepEqual(x.hydrated(), ['overcast-night']);
     assert.match(x.summary.textContent, /Weather unavailable/);
-    assert.match(x.status.textContent, /last published sky/);
+    assert.match(x.status.textContent, /last sky as a still/);
     await x.refresh({ weather_code: 61 });
     assert.equal(x.root.dataset.scene, 'rain'); assert.deepEqual(x.playing(), ['rain']);
   });
   await test('snapshot respects reduced motion and background tabs before the scene controller runs', async () => {
-    const initial = { ...cached({ weather_code: 45 }), version: 1, scene: 'fog', validUntil: START + 2700000 };
+    const initial = { ...cached({ weather_code: 45 }), version: 1, scene: 'fog', validUntil: START + 1800000 };
     for (const options of [{ reduced: true }, { hidden: true }]) {
       const x = setup({ boot: 'snapshot', initial, ...options }); await flush();
       assert.deepEqual(x.loaded(), []); assert.equal(x.root.dataset.scene, 'fog');
@@ -459,14 +482,14 @@ const cached = changes => ({ current: { time: START / 1000, weather_code: 2, is_
     }
   });
   await test('an early failed video advances to MP4 when the deferred controller arrives', async () => {
-    const initial = { ...cached({ weather_code: 61 }), version: 1, scene: 'rain', validUntil: START + 2700000 };
+    const initial = { ...cached({ weather_code: 61 }), version: 1, scene: 'rain', validUntil: START + 1800000 };
     const x = setup({ boot: 'weather-only', initial }); x.runInitial();
     x.videos.rain.error = { code: 4 }; x.videos.rain.fail(); x.runSky(); await flush();
     assert.match(x.videos.rain.src, /rain\.mp4\?/);
     assert.equal(x.videos.rain.sourceWrites.length, 2);
   });
   await test('time-bucketed live data cannot reverse the snapshot sunrise correction', async () => {
-    const initial = { ...cached({ weather_code: 0, cloud_cover: 0 }), version: 1, scene: 'sunny', validUntil: START + 2700000 };
+    const initial = { ...cached({ weather_code: 0, cloud_cover: 0 }), version: 1, scene: 'sunny', validUntil: START + 1800000 };
     const x = setup({ boot: 'snapshot', initial }); await flush();
     await x.resolve(0, { weather_code: 0, cloud_cover: 0, is_day: 0 });
     assert.equal(x.root.dataset.scene, 'sunny');

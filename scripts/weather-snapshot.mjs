@@ -6,25 +6,26 @@ import '../weather.js';
 const sourceDirectory = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const weather = globalThis.SFWeather;
 const MINUTE = 60000;
-export const MAX_SNAPSHOT_AGE = 45 * MINUTE;
-export const REFRESH_DEPLOY_AGE = 30 * MINUTE;
+export const MAX_SNAPSHOT_AGE = 30 * MINUTE;
+export const REFRESH_DEPLOY_AGE = 15 * MINUTE;
 export const MAX_PROVIDER_AGE = 30 * MINUTE;
 const BUILD_MARKER = '.weather-snapshot-build';
 const revisionPattern = /^[a-f0-9]{40}$/i;
 
 export function validateSnapshot(value, now = Date.now()) {
   try {
-    if (!value || value.version !== 1 || !Number.isFinite(now)
+    if (!value || value.version !== 1 || value.weatherPolicy !== weather.policyId || !Number.isFinite(now)
       || !Number.isFinite(value.fetchedAt) || value.fetchedAt <= 0 || value.fetchedAt > now
       || !Number.isFinite(value.validUntil) || value.validUntil <= now
-      || value.validUntil > value.fetchedAt + MAX_SNAPSHOT_AGE) return null;
+      || value.validUntil > value.fetchedAt + MAX_SNAPSHOT_AGE
+      || value.validUntil > value.current?.time * 1000 + weather.maxWeatherAge) return null;
     const current = weather.normalize(value.current);
     const providerAgeAtFetch = value.fetchedAt - current.time * 1000;
     if (providerAgeAtFetch < -30000 || providerAgeAtFetch > MAX_PROVIDER_AGE || !weather.isFresh(current, now)) return null;
     const scene = weather.pickScene(current);
     if (value.scene !== scene) return null;
     if (value.sourceRevision !== undefined && (typeof value.sourceRevision !== 'string' || !revisionPattern.test(value.sourceRevision))) return null;
-    return { version: 1, current, fetchedAt: value.fetchedAt, validUntil: value.validUntil, scene,
+    return { version: 1, weatherPolicy: weather.policyId, current, fetchedAt: value.fetchedAt, validUntil: value.validUntil, scene,
       ...(value.sourceRevision === undefined ? {} : { sourceRevision: value.sourceRevision.toLowerCase() }) };
   } catch {
     return null;
@@ -58,8 +59,8 @@ export function createSnapshot(payload, now = Date.now()) {
   // boundary to avoid carrying a preceding day/night phase across that edge.
   current.is_day = days.some(day => now >= day.rise && now < day.set) ? 1 : 0;
   const candidate = {
-    version: 1, current, fetchedAt: now,
-    validUntil: Math.min(now + MAX_SNAPSHOT_AGE, nextBoundary),
+    version: 1, weatherPolicy: weather.policyId, current, fetchedAt: now,
+    validUntil: Math.min(now + MAX_SNAPSHOT_AGE, current.time * 1000 + weather.maxWeatherAge, nextBoundary),
     scene: weather.pickScene(current),
   };
   const snapshot = validateSnapshot(candidate, now);

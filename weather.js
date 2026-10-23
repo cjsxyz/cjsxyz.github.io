@@ -3,11 +3,17 @@
   const host = typeof window === 'undefined' ? globalThis : window;
   const page = typeof document === 'undefined' ? null : document;
 
-  // Open-Meteo: https://open-meteo.com/en/docs (fields and WMO codes verified 2026-10-22).
-  // Current values are model estimates; Unix timestamps remain UTC even with an SF timezone.
+  // East Cut / Financial District. Use NOAA's calibrated National Blend of
+  // Models explicitly: automatic selection previously chose a western HRRR
+  // grid with a gray sky while local conditions and NWS indicated sunshine.
+  // These are current-time model estimates, not station observations.
+  // https://open-meteo.com/en/docs/gfs-api
+  const policyId = 'east-cut-nbm-nearest-v1';
+  const maxWeatherAge = 30 * 60 * 1000;
   const fields = ['temperature_2m', 'is_day', 'weather_code', 'cloud_cover', 'direct_normal_irradiance_instant'];
   const endpoint = 'https://api.open-meteo.com/v1/forecast?' + new URLSearchParams({
-    latitude: '37.7749', longitude: '-122.4194', timezone: 'America/Los_Angeles',
+    latitude: '37.789', longitude: '-122.396', timezone: 'America/Los_Angeles',
+    models: 'ncep_nbm_conus', cell_selection: 'nearest',
     timeformat: 'unixtime', temperature_unit: 'fahrenheit', current: fields.join(','),
   });
   const refreshMs = 5 * 60 * 1000;
@@ -52,7 +58,7 @@
   function isFresh(current, now = Date.now()) {
     try {
       const age = now - normalize(current).time * 1000;
-      return Number.isFinite(now) && age >= -30 * 60 * 1000 && age <= 2 * 60 * 60 * 1000;
+      return Number.isFinite(now) && age >= -30000 && age < maxWeatherAge;
     } catch {
       return false;
     }
@@ -64,14 +70,27 @@
       if (!node) return null;
       const value = JSON.parse(node.textContent);
       const now = Date.now();
-      if (value.version !== 1 || !Number.isFinite(value.fetchedAt)
-        || value.fetchedAt > now + 60000 || now - value.fetchedAt > 45 * 60 * 1000
+      if (value.version !== 1 || value.weatherPolicy !== policyId || !Number.isFinite(value.fetchedAt)
+        || value.fetchedAt > now + 60000 || now - value.fetchedAt >= maxWeatherAge
         || !Number.isFinite(value.validUntil) || value.validUntil <= now
-        || value.validUntil > value.fetchedAt + 45 * 60 * 1000
+        || value.validUntil > value.fetchedAt + maxWeatherAge
+        || value.validUntil > value.current?.time * 1000 + maxWeatherAge
         || !isFresh(value.current, now)) return null;
       const current = normalize(value.current);
+      // A static deployment can lag a visitor's most recent live reading.
+      // Never start its older video when newer weather is already cached.
+      if (readCache()?.current.time > current.time) return null;
       if (value.scene !== select(current)) return null;
       return { current, fetchedAt: value.fetchedAt, scene: value.scene };
+    } catch { return null; }
+  }
+
+  function readCache() {
+    try {
+      const cached = JSON.parse(localStorage.getItem(`sf-sky-weather-${policyId}`));
+      if (cached?.weatherPolicy !== policyId || !isFresh(cached.current)
+        || !Number.isFinite(cached.fetchedAt) || cached.fetchedAt > Date.now()) return null;
+      return { current: normalize(cached.current), fetchedAt: cached.fetchedAt };
     } catch { return null; }
   }
 
@@ -141,7 +160,7 @@
   }
 
   host.SFWeather = Object.freeze({
-    endpoint, refreshMs, fetchCurrent, isFresh, summarize, normalize, readInitial,
+    endpoint, policyId, maxWeatherAge, refreshMs, fetchCurrent, isFresh, summarize, normalize, readInitial, readCache,
     takeStartupRequest() {
       const request = startupRequest;
       startupRequest = null;

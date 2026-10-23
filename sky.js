@@ -14,13 +14,14 @@
   const condition = document.querySelector('#weather-condition');
   const freshness = document.querySelector('#weather-freshness');
   const weatherSummary = document.querySelector('#weather-summary');
-  const cacheKey = 'sf-sky-weather-v1';
+  const cacheKey = `sf-sky-weather-${weather.policyId}`;
   const sfTime = new Intl.DateTimeFormat('en-US', { timeZone: 'America/Los_Angeles', hour: 'numeric', minute: '2-digit' });
   let current = null;
   let fetchedAt = 0;
   let lastAttempt = 0;
   let pending = false;
   let refreshTimer;
+  let expiryTimer;
   let weatherFailed = false;
   let hasWeatherScene = false;
   const initialWeather = weather.readInitial();
@@ -28,13 +29,11 @@
     current = initialWeather.current;
     fetchedAt = initialWeather.fetchedAt;
   }
-  try {
-    const cached = JSON.parse(localStorage.getItem(cacheKey));
-    if (!initialWeather && weather.isFresh(cached?.current) && Number.isFinite(cached.fetchedAt) && cached.fetchedAt <= Date.now()) {
-      current = cached.current;
-      fetchedAt = cached.fetchedAt;
-    }
-  } catch { /* Storage may be disabled; live weather still works. */ }
+  const cachedWeather = !initialWeather && weather.readCache();
+  if (cachedWeather) {
+    current = cachedWeather.current;
+    fetchedAt = cachedWeather.fetchedAt;
+  }
   const scenes = {
     cloudy: { title: 'Cloudy', src: './assets/clouds.mp4?v=weather-scenes-80', webmSrc: './assets/clouds.webm?v=weather-scenes-46', rate: 0.5, description: 'White clouds billowing gently across a blue sky' },
     sunny: { title: 'Sunny', src: './assets/sunny.mp4?v=weather-scenes-80', webmSrc: './assets/sunny.webm?v=weather-scenes-34', rate: 1, description: 'A clear blue sky with bright sunlight and no clouds' },
@@ -86,7 +85,7 @@
   function applyPlaybackPreference() {
     for (const [key, scene] of Object.entries(scenes)) {
       const video = scene.video;
-      if (hasWeatherScene && key === selected && wantsToPlay && !document.hidden && !scene.failed) {
+      if (hasWeatherScene && weather.isFresh(current) && key === selected && wantsToPlay && !document.hidden && !scene.failed) {
         video.hidden = video.readyState < 2 && video.dataset.startupReady !== 'true';
         if (!video.getAttribute('src') || scene.needsFallback) {
           video.hidden = true;
@@ -156,6 +155,13 @@
 
   function useCurrentWeather({ instant = false } = {}) {
     if (!current || !weather.isFresh(current)) return false;
+    clearTimeout(expiryTimer);
+    expiryTimer = setTimeout(() => {
+      applyPlaybackPreference();
+      showWeather();
+      status.textContent = 'Checking current weather. The previous sky is paused.';
+      refreshWeather({ force: true });
+    }, Math.max(1, current.time * 1000 + weather.maxWeatherAge - Date.now()));
     hasWeatherScene = true;
     selectScene(weather.pickScene(current), { instant });
     return true;
@@ -190,7 +196,7 @@
       }
       fetchedAt = result.fetchedAt;
       weatherFailed = false;
-      try { localStorage.setItem(cacheKey, JSON.stringify({ current, fetchedAt })); } catch { /* Optional cache. */ }
+      try { localStorage.setItem(cacheKey, JSON.stringify({ current, fetchedAt, weatherPolicy: weather.policyId })); } catch { /* Optional cache. */ }
       useCurrentWeather({ instant: !hasWeatherScene });
     } catch {
       weatherFailed = true;
@@ -202,6 +208,7 @@
         hasWeatherScene = true;
         selectScene('cloudy', { instant: true });
       } else applyPlaybackPreference();
+      if (!weather.isFresh(current)) status.textContent = 'Weather unavailable. Showing the last sky as a still.';
     } finally {
       clearTimeout(timeout);
       pending = false;

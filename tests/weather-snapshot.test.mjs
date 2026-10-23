@@ -65,7 +65,7 @@ test('snapshot creation selects all ten established day/night scenes', () => {
     assert.equal(result.version, 1, expected);
     assert.equal(result.scene, expected);
     assert.equal(result.fetchedAt, now);
-    assert.equal(result.validUntil, now + 45 * minute);
+    assert.equal(result.validUntil, now + 30 * minute);
     assert.equal(validateSnapshot(result, now)?.scene, expected);
   }
 });
@@ -109,13 +109,22 @@ test('creation derives current day/night phase from solar times near transitions
 });
 
 test('provider timestamps allow at most 30 minutes old or 30 seconds ahead at fetch', () => {
-  assert.ok(snapshot(noon, { time: seconds(noon - 30 * minute) }));
+  assert.ok(snapshot(noon, { time: seconds(noon - 30 * minute) + 1 }));
+  assert.throws(() => snapshot(noon, { time: seconds(noon - 30 * minute) }));
   assert.ok(snapshot(noon, { time: seconds(noon + 30_000) }));
   assert.throws(() => snapshot(noon, { time: seconds(noon - 30 * minute) - 1 }));
   assert.throws(() => snapshot(noon, { time: seconds(noon + 30_000) + 1 }));
   const aged = snapshot(noon - 40 * minute);
-  assert.ok(validateSnapshot(aged, noon), 'still valid until its explicit expiration');
+  assert.equal(validateSnapshot(aged, noon), null, 'old provider time must expire even if fetched recently');
   assert.equal(validateSnapshot({ ...snapshot(), current: { ...snapshot().current, time: seconds(noon - 31 * minute) } }, noon), null);
+});
+
+test('recent fetch cannot extend an older reading beyond its actual freshness limit', () => {
+  const result = snapshot(noon, { time: seconds(noon - 20 * minute) });
+  assert.equal(result.validUntil, noon + 10 * minute);
+  assert.ok(validateSnapshot(result, result.validUntil - 1));
+  assert.equal(validateSnapshot(result, result.validUntil), null);
+  assert.equal(validateSnapshot({ ...result, validUntil: noon + 30 * minute }, noon), null);
 });
 
 test('creation requires two valid chronological solar-day entries', () => {
@@ -134,6 +143,7 @@ test('validation rejects stale, future, mismatched and malformed snapshots', () 
   const good = snapshot();
   for (const value of [
     null, [], {}, { ...good, version: 2 },
+    { ...good, weatherPolicy: undefined }, { ...good, weatherPolicy: 'old-central-sf-hrrr' },
     { ...good, scene: 'night-rain' }, { ...good, scene: '</script>' },
     { ...good, fetchedAt: noon + minute },
     { ...good, fetchedAt: Number.NaN }, { ...good, fetchedAt: 'now' },
@@ -170,6 +180,10 @@ test('provider fetch requests Fahrenheit and solar times with an abort signal', 
   assert.equal(calls.length, 1);
   assert.equal(calls[0].url.hostname, 'api.open-meteo.com');
   assert.equal(calls[0].url.searchParams.get('temperature_unit'), 'fahrenheit');
+  assert.equal(calls[0].url.searchParams.get('models'), 'ncep_nbm_conus');
+  assert.equal(calls[0].url.searchParams.get('cell_selection'), 'nearest');
+  assert.equal(calls[0].url.searchParams.get('latitude'), '37.789');
+  assert.equal(calls[0].url.searchParams.get('longitude'), '-122.396');
   assert.equal(calls[0].url.searchParams.get('timeformat'), 'unixtime');
   assert.match(calls[0].url.searchParams.get('daily'), /sunrise/);
   assert.match(calls[0].url.searchParams.get('daily'), /sunset/);
@@ -304,7 +318,7 @@ test('check uses the workflow revision by default and allows explicit metadata o
 
 test('forced provider outage reuses valid published weather without extending its lifetime', async t => {
   const directory = await temporary(t);
-  const published = { ...snapshot(noon - 40 * minute), sourceRevision: revisionA };
+  const published = { ...snapshot(noon - 25 * minute), sourceRevision: revisionA };
   const output = path.join(directory, 'forced-candidate.json');
   const githubOutput = path.join(directory, 'github-output.txt');
   const calls = [];
@@ -318,7 +332,7 @@ test('forced provider outage reuses valid published weather without extending it
   assert.equal(result.shouldDeploy, true);
   assert.equal(result.reason, 'forced-with-cached-snapshot');
   assert.deepEqual(result.snapshot, { ...published, sourceRevision: revisionB });
-  assert.equal(result.snapshot.fetchedAt, noon - 40 * minute);
+  assert.equal(result.snapshot.fetchedAt, noon - 25 * minute);
   assert.equal(result.snapshot.validUntil, noon + 5 * minute);
   assert.equal(validateSnapshot(result.snapshot, noon + 5 * minute), null);
   assert.deepEqual(JSON.parse(await readFile(output, 'utf8')), { ...published, sourceRevision: revisionB });
@@ -328,7 +342,8 @@ test('forced provider outage reuses valid published weather without extending it
 
 test('forced provider outage falls back to live startup when published weather is invalid', async t => {
   const directory = await temporary(t);
-  for (const [index, published] of [null, {}, { ...snapshot(), validUntil: noon }, { ...snapshot(), sourceRevision: 'invalid' }].entries()) {
+  for (const [index, published] of [null, {}, { ...snapshot(), validUntil: noon }, { ...snapshot(), sourceRevision: 'invalid' },
+    { ...snapshot(), weatherPolicy: undefined }, { ...snapshot(), weatherPolicy: 'old-central-sf-hrrr' }].entries()) {
     const output = path.join(directory, `invalid-cache-${index}.json`);
     const result = await check({ output, githubOutput: null, force: true, sourceRevision: revisionB, now: () => noon,
       fetchImpl: async url => {
