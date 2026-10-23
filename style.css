@@ -49,6 +49,8 @@ body {
 
 :root[data-scene="cloudy"] .scene-cloudy,
 :root[data-scene="sunny"] .scene-sunny,
+:root[data-scene="sunset"] .scene-sunset,
+:root[data-scene="cloudy-sunset"] .scene-cloudy-sunset,
 :root[data-scene="rain"] .scene-rain,
 :root[data-scene="overcast"] .scene-overcast,
 :root[data-scene="fog"] .scene-fog,
@@ -59,6 +61,8 @@ body {
 :root[data-scene="night-fog"] .scene-night-fog { opacity: 1; }
 
 .scene-sunny { background: #6b9ec2; }
+.scene-sunset { background: linear-gradient(#a39595, #af8d7c, #7a5657); }
+.scene-cloudy-sunset { background: linear-gradient(#88969e 0%, #7a7b7e 50%, #ca9373 75%, #455360 100%); }
 .scene-rain { background: #566673; }
 .scene-overcast { background: #6c767e; }
 .scene-fog { background: #b4bec6; }

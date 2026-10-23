@@ -7,6 +7,7 @@
   let request = 0;
   const copy = {
     cloudy: 'Preview: cloudy in San Francisco', sunny: 'Preview: sunny in San Francisco',
+    sunset: 'Preview: clear sunset in San Francisco', 'cloudy-sunset': 'Preview: cloudy sunset in San Francisco',
     overcast: 'Preview: overcast in San Francisco', rain: 'Preview: raining in San Francisco',
     fog: 'Preview: foggy in San Francisco', night: 'Preview: cloudy in San Francisco',
     'clear-night': 'Preview: clear in San Francisco', 'overcast-night': 'Preview: cloudy in San Francisco',
@@ -98,7 +99,7 @@
       id: match[1] || match[2], title: match[3], src: match[4], webmSrc: match[5],
       rate: Number(match[6]), description: match[7]
     }));
-    if (scenes.length !== 10 || scenes.some(scene => !copy[scene.id])) throw new Error('The live scene table could not be read.');
+    if (scenes.length !== Object.keys(copy).length || scenes.some(scene => !copy[scene.id])) throw new Error('The live scene table could not be read.');
     return scenes;
   }
 

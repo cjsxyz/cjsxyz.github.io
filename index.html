@@ -33,7 +33,7 @@
     <meta name="twitter:image" content="https://chrisshu.com/assets/og-cloudy-v117.jpg" />
     <meta name="twitter:image:alt" content="White clouds against a pale blue sky" />
     <link rel="preconnect" href="https://api.open-meteo.com" crossorigin />
-    <script src="./weather.js?v=weather-scenes-132" async fetchpriority="high" data-weather-startup></script>
+    <script src="./weather.js?v=weather-scenes-133" async fetchpriority="high" data-weather-startup></script>
     <link rel="icon" type="image/svg+xml" sizes="any" href="./assets/favicon.svg?v=weather-scenes-100" />
     <script>
       (() => {
@@ -50,8 +50,8 @@
         document.documentElement.dataset.scene = initial?.scene || document.documentElement.dataset.scene || 'cloudy';
       })();
     </script>
-    <link rel="stylesheet" href="./style.css?v=weather-scenes-126" />
-    <script src="./sky.js?v=weather-scenes-132" defer></script>
+    <link rel="stylesheet" href="./style.css?v=weather-scenes-133" />
+    <script src="./sky.js?v=weather-scenes-136" defer></script>
     <script type="module" src="./dock-sounds.js?v=weather-scenes-124"></script>
     <script src="./dock.js?v=weather-scenes-124" defer></script>
   </head>
@@ -65,6 +65,14 @@
       <div class="scene-layer scene-sunny" data-scene="sunny" aria-hidden="true">
         <img class="scene-poster" data-src="./assets/sunny-poster.webp?v=weather-scenes-79" data-preview="./assets/sunny-poster.preview-v118.webp" alt="" />
         <video id="sunny-video" class="sky-scene" muted loop playsinline preload="none" disablepictureinpicture aria-label="A clear blue sky with bright sunlight" hidden></video>
+      </div>
+      <div class="scene-layer scene-sunset" data-scene="sunset" aria-hidden="true">
+        <img class="scene-poster" data-src="./assets/sunset-poster.webp?v=weather-scenes-130" data-preview="./assets/sunset-poster.preview-v130.webp" alt="" />
+        <video id="sunset-video" class="sky-scene" muted loop playsinline preload="none" disablepictureinpicture aria-label="A quiet pink and lavender sunset sky" hidden></video>
+      </div>
+      <div class="scene-layer scene-cloudy-sunset" data-scene="cloudy-sunset" aria-hidden="true">
+        <img class="scene-poster" data-src="./assets/cloudy-sunset-poster.webp?v=weather-scenes-135" data-preview="./assets/cloudy-sunset-poster.preview-v135.webp" alt="" />
+        <video id="cloudy-sunset-video" class="sky-scene" muted loop playsinline preload="none" disablepictureinpicture aria-label="Blue-gray clouds above a soft peach sunset sky" hidden></video>
       </div>
       <div class="scene-layer scene-overcast" data-scene="overcast" aria-hidden="true">
         <img class="scene-poster" data-src="./assets/overcast-poster.webp?v=weather-scenes-79" data-preview="./assets/overcast-poster.preview-v118.webp" alt="" />

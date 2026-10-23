@@ -3,6 +3,7 @@ import assert from 'node:assert/strict';
 import { mkdtemp, readFile, writeFile, mkdir, readdir, rm, symlink, lstat } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
+import { execFileSync } from 'node:child_process';
 import {
   validateSnapshot, createSnapshot, fetchSnapshot, compareSnapshots, check, build,
 } from '../scripts/weather-snapshot.mjs';
@@ -13,8 +14,8 @@ const minute = 60_000;
 const day = 24 * 60 * minute;
 const noon = Date.parse('2026-10-22T19:00:00Z');
 const night = Date.parse('2026-10-23T03:00:00Z');
-const sunrise = Date.parse('2026-10-22T14:30:00Z');
-const sunset = Date.parse('2026-10-23T01:20:00Z');
+const weather = globalThis.SFWeather;
+const { sunrise, sunsetStart, sunset, dusk } = weather.solarPhase(noon);
 const seconds = value => Math.floor(value / 1000);
 const revisionA = 'a'.repeat(40);
 const revisionB = 'b'.repeat(40);
@@ -52,6 +53,8 @@ const sceneCases = [
   ['overcast', noon, { weather_code: 2, cloud_cover: 70, direct_normal_irradiance_instant: 20 }],
   ['rain', noon, { weather_code: 61 }],
   ['fog', noon, { weather_code: 45 }],
+  ['sunset', sunsetStart + 5 * minute, { weather_code: 0, cloud_cover: 0 }],
+  ['cloudy-sunset', sunsetStart + 5 * minute, { weather_code: 2, cloud_cover: 45, direct_normal_irradiance_instant: 500 }],
   ['clear-night', night, { weather_code: 0, cloud_cover: 0 }],
   ['night', night, { weather_code: 2, cloud_cover: 45 }],
   ['overcast-night', night, { weather_code: 3, cloud_cover: 95 }],
@@ -59,13 +62,13 @@ const sceneCases = [
   ['night-fog', night, { weather_code: 45 }],
 ];
 
-test('snapshot creation selects all ten established day/night scenes', () => {
+test('snapshot creation selects all twelve scenes, including clear and cloudy sunset', () => {
   for (const [expected, now, overrides] of sceneCases) {
     const result = snapshot(now, overrides);
     assert.equal(result.version, 1, expected);
     assert.equal(result.scene, expected);
     assert.equal(result.fetchedAt, now);
-    assert.equal(result.validUntil, now + 30 * minute);
+    assert.equal(result.validUntil, Math.min(now + 30 * minute, weather.nextSolarBoundary(now)));
     assert.equal(validateSnapshot(result, now)?.scene, expected);
   }
 });
@@ -77,10 +80,12 @@ test('drizzle and every supported thunderstorm code remain rain by day and night
   }
 });
 
-test('snapshot expiration stops at the next sunrise or sunset', () => {
+test('snapshot expiration stops at every solar lighting boundary', () => {
   for (const [now, next, is_day] of [
     [sunrise - 5 * minute, sunrise, 0],
+    [sunsetStart - 5 * minute, sunsetStart, 1],
     [sunset - 5 * minute, sunset, 1],
+    [dusk - 5 * minute, dusk, 0],
   ]) {
     const result = snapshot(now, { is_day });
     assert.ok(result.validUntil <= next, 'must not outlive the day/night transition');
@@ -103,9 +108,144 @@ test('creation rejects malformed, stale, or impossible provider weather', () => 
 
 test('creation derives current day/night phase from solar times near transitions', () => {
   assert.equal(snapshot(sunrise + minute, { is_day: 0, weather_code: 0, cloud_cover: 0 }).scene, 'sunny');
-  assert.equal(snapshot(sunset + minute, { is_day: 1, weather_code: 0, cloud_cover: 0 }).scene, 'clear-night');
+  assert.equal(snapshot(sunset + minute, { is_day: 1, weather_code: 0, cloud_cover: 0 }).scene, 'sunset');
   assert.equal(snapshot(sunrise, { is_day: 0 }).current.is_day, 1);
   assert.equal(snapshot(sunset, { is_day: 1 }).current.is_day, 0);
+});
+
+test('clear sunset uses the wall clock with inclusive start and exclusive civil dusk', () => {
+  const current = payload(noon, { weather_code: 0, cloud_cover: 0, is_day: 0 }).current;
+  for (const [now, expected] of [
+    [sunrise - 1, 'clear-night'], [sunrise, 'sunny'],
+    [sunsetStart - 1, 'sunny'], [sunsetStart, 'sunset'],
+    [sunset, 'sunset'], [dusk - 1, 'sunset'], [dusk, 'clear-night'],
+  ]) {
+    assert.equal(weather.pickScene(current, now), expected);
+    assert.equal(weather.pickScene({ ...current, is_day: 1 }, now), expected,
+      'a contradictory provider flag does not change the solar clock');
+  }
+  assert.equal(weather.summarize(current, sunset), 'Currently 58°F and clear in San Francisco');
+  assert.equal(weather.solarPhase(sunset).isDay, false, 'sunset imagery continues into civil twilight');
+});
+
+test('sunset requires clear weather and never replaces precipitation, fog or overcast', () => {
+  for (const now of [sunsetStart + minute, sunset + minute]) {
+    const suffix = now < sunset ? '' : 'night-';
+    for (const weather_code of [51, 53, 55, 56, 57, 61, 63, 65, 66, 67, 80, 81, 82, 95, 96, 97, 99]) {
+      assert.equal(weather.pickScene(payload(now, { weather_code, cloud_cover: 0 }).current, now), `${suffix}rain`);
+    }
+    for (const weather_code of [45, 48]) {
+      assert.equal(weather.pickScene(payload(now, { weather_code, cloud_cover: 0 }).current, now), `${suffix}fog`);
+    }
+    for (const [weather_code, cloud_cover] of [[2, 80], [3, 10]]) {
+      assert.equal(weather.pickScene(payload(now, { weather_code, cloud_cover, direct_normal_irradiance_instant: 0 }).current, now),
+        now < sunset ? 'overcast' : 'overcast-night');
+    }
+    for (const weather_code of [0, 1]) for (const cloud_cover of [0, 25, null]) {
+      assert.equal(weather.pickScene(payload(now, { weather_code, cloud_cover }).current, now), 'sunset');
+    }
+    assert.notEqual(weather.pickScene(payload(now, { weather_code: 1, cloud_cover: 26 }).current, now), 'sunset');
+    assert.notEqual(weather.pickScene(payload(now, { weather_code: 2, cloud_cover: 10 }).current, now), 'sunset');
+  }
+});
+
+test('cloudy sunset preserves the daylight sunlight cutoff and ends at actual sunset', () => {
+  const current = payload(noon, { weather_code: 2, cloud_cover: 45, is_day: 0 }).current;
+  for (const [now, expected] of [
+    [sunsetStart - 1, 'cloudy'], [sunsetStart, 'cloudy-sunset'],
+    [sunset - 1, 'cloudy-sunset'], [sunset, 'night'], [dusk, 'night'],
+  ]) {
+    assert.equal(weather.pickScene(current, now), expected);
+    assert.equal(weather.pickScene({ ...current, is_day: 1 }, now), expected,
+      'stale daylight flags and positive sunlight cannot extend sunset clouds after sunset');
+  }
+  for (const [irradiance, expected] of [[0, 'overcast'], [120, 'overcast'], [120.01, 'cloudy-sunset']]) {
+    assert.equal(weather.pickScene({ ...current, direct_normal_irradiance_instant: irradiance }, sunsetStart), expected);
+  }
+  for (const [weather_code, cloud_cover, expected] of [
+    [2, 59, 'cloudy-sunset'], [2, 60, 'overcast'], [3, 10, 'overcast'], [2, null, 'cloudy-sunset'],
+  ]) {
+    assert.equal(weather.pickScene({ ...current, weather_code, cloud_cover, direct_normal_irradiance_instant: null }, sunsetStart), expected,
+      'missing sunlight preserves the original cloud-coverage fallback');
+  }
+  assert.equal(weather.pickScene({ ...current, cloud_cover: 80 }, sunset), 'overcast-night');
+  assert.equal(weather.summarize(current, sunsetStart), 'Currently 58°F and cloudy in San Francisco');
+});
+
+test('cloudy-sunset snapshots expire at sunset and cannot extend sunlit clouds into night', () => {
+  const during = snapshot(sunset - minute, { weather_code: 2, cloud_cover: 45 });
+  const after = snapshot(sunset, { weather_code: 2, cloud_cover: 45, is_day: 1 });
+  assert.equal(during.scene, 'cloudy-sunset');
+  assert.equal(during.validUntil, sunset);
+  assert.equal(validateSnapshot(during, sunset), null);
+  assert.equal(after.scene, 'night');
+  assert.equal(compareSnapshots(after, during, sunset).shouldDeploy, true);
+  assert.equal(validateSnapshot({ ...during, validUntil: sunset + 10 * minute }, sunset), null);
+});
+
+test('solar calculations agree with independent USNO SF references across seasons and DST', () => {
+  // USNO one-day service, SF 37.7749,-122.4194, rounded to whole minutes.
+  // https://aa.usno.navy.mil/api/rstt/oneday?date=2026-06-21&coords=37.7749,-122.4194&tz=-7
+  // The compact SunCalc 1.9 approximation differs by up to ~3 minutes; this is
+  // a visual lighting cue, not a precision astronomical ephemeris.
+  const references = [
+    ['2026-03-07', '2026-03-07T14:32Z', '2026-03-08T02:09Z', '2026-03-08T02:36Z'],
+    ['2026-03-08', '2026-03-08T14:31Z', '2026-03-09T02:10Z', '2026-03-09T02:37Z'],
+    ['2026-03-20', '2026-03-20T14:13Z', '2026-03-21T02:22Z', '2026-03-21T02:48Z'],
+    ['2026-06-21', '2026-06-21T12:48Z', '2026-06-22T03:35Z', '2026-06-22T04:06Z'],
+    ['2026-09-22', '2026-09-22T13:58Z', '2026-09-23T02:06Z', '2026-09-23T02:32Z'],
+    ['2026-10-31', '2026-10-31T14:34Z', '2026-11-01T01:12Z', '2026-11-01T01:39Z'],
+    ['2026-11-01', '2026-11-01T14:35Z', '2026-11-02T01:11Z', '2026-11-02T01:38Z'],
+    ['2026-12-21', '2026-12-21T15:21Z', '2026-12-22T00:54Z', '2026-12-22T01:24Z'],
+  ];
+  for (const [date, rise, set, civilDusk] of references) {
+    const solar = weather.solarPhase(Date.parse(`${date}T20:00Z`));
+    for (const [field, expected] of [['sunrise', rise], ['sunset', set], ['dusk', civilDusk]]) {
+      assert.ok(Math.abs(solar[field] - Date.parse(expected)) < 4 * minute, `${date} ${field}`);
+    }
+    assert.equal(solar.sunsetStart, solar.sunset - 30 * minute);
+  }
+});
+
+test('solar dates belong to San Francisco even around UTC midnight and host timezone changes', () => {
+  for (const date of ['2026-03-08', '2026-06-21', '2026-11-01', '2026-12-21']) {
+    const midday = Date.parse(`${date}T20:00Z`);
+    const solar = weather.solarPhase(midday);
+    const utcNextMidnight = Date.parse(`${date}T00:00Z`) + day;
+    assert.equal(weather.solarPhase(utcNextMidnight).sunset, solar.sunset,
+      'UTC midnight is still the same SF afternoon');
+    for (const boundary of [solar.sunrise, solar.sunsetStart, solar.sunset, solar.dusk]) {
+      assert.equal(weather.nextSolarBoundary(boundary - 1), boundary);
+      assert.ok(weather.nextSolarBoundary(boundary) > boundary);
+    }
+    assert.ok(weather.nextSolarBoundary(solar.dusk) <= solar.dusk + day);
+  }
+  const moduleURL = new URL('../weather.js', import.meta.url).href;
+  const script = `await import(${JSON.stringify(moduleURL)}); console.log(JSON.stringify(SFWeather.solarPhase(${sunset})))`;
+  const expected = JSON.stringify(weather.solarPhase(sunset));
+  for (const TZ of ['UTC', 'America/Los_Angeles', 'Asia/Tokyo', 'Pacific/Auckland']) {
+    const actual = execFileSync(process.execPath, ['--input-type=module', '-e', script], { env: { ...process.env, TZ }, encoding: 'utf8' }).trim();
+    assert.equal(actual, expected, TZ);
+  }
+  for (const invalid of [NaN, Infinity, -Infinity, 'today', null]) assert.throws(() => weather.solarPhase(invalid));
+});
+
+test('snapshot validation and deploy comparison cannot carry clear daylight or sunset beyond its phase', () => {
+  const clear = { weather_code: 0, cloud_cover: 0 };
+  const before = snapshot(sunsetStart - minute, clear);
+  const during = snapshot(sunsetStart + minute, clear);
+  const lastLight = snapshot(dusk - minute, clear);
+  const after = snapshot(dusk + minute, clear);
+  assert.equal(before.validUntil, sunsetStart);
+  assert.equal(validateSnapshot(before, sunsetStart), null);
+  assert.equal(during.scene, 'sunset');
+  assert.equal(lastLight.validUntil, dusk);
+  assert.equal(validateSnapshot(lastLight, dusk), null);
+  assert.equal(after.scene, 'clear-night');
+  assert.equal(compareSnapshots(during, before, during.fetchedAt).shouldDeploy, true);
+  assert.equal(compareSnapshots(after, lastLight, after.fetchedAt).shouldDeploy, true);
+  const uncappedLegacy = { ...before, validUntil: before.fetchedAt + 45 * minute };
+  assert.equal(validateSnapshot(uncappedLegacy, sunsetStart), null, 'clock-aware selection rejects old uncapped scenes too');
 });
 
 test('provider timestamps allow at most 30 minutes old or 30 seconds ahead at fetch', () => {

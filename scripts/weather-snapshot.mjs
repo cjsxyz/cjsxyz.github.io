@@ -22,7 +22,7 @@ export function validateSnapshot(value, now = Date.now()) {
     const current = weather.normalize(value.current);
     const providerAgeAtFetch = value.fetchedAt - current.time * 1000;
     if (providerAgeAtFetch < -30000 || providerAgeAtFetch > MAX_PROVIDER_AGE || !weather.isFresh(current, now)) return null;
-    const scene = weather.pickScene(current);
+    const scene = weather.pickScene(current, now);
     if (value.scene !== scene) return null;
     if (value.sourceRevision !== undefined && (typeof value.sourceRevision !== 'string' || !revisionPattern.test(value.sourceRevision))) return null;
     return { version: 1, weatherPolicy: weather.policyId, current, fetchedAt: value.fetchedAt, validUntil: value.validUntil, scene,
@@ -52,16 +52,14 @@ export function createSnapshot(payload, now = Date.now()) {
   if (days[0].rise > now + 24 * 60 * MINUTE || days.at(-1).set < now) {
     throw new Error('Sunrise/sunset dates do not cover the current time');
   }
-  const boundaries = days.flatMap(day => [day.rise, day.set]);
-  const nextBoundary = boundaries.find(time => time > now);
-  if (!nextBoundary) throw new Error('No future sunrise/sunset boundary');
-  // Current provider readings are time-bucketed. Use today's astronomical
-  // boundary to avoid carrying a preceding day/night phase across that edge.
-  current.is_day = days.some(day => now >= day.rise && now < day.set) ? 1 : 0;
+  // Use the exact same solar clock as the browser, including the clear-sky
+  // sunset interval. Provider readings may still describe the preceding bucket.
+  const solar = weather.solarPhase(now);
+  current.is_day = solar.isDay ? 1 : 0;
   const candidate = {
     version: 1, weatherPolicy: weather.policyId, current, fetchedAt: now,
-    validUntil: Math.min(now + MAX_SNAPSHOT_AGE, current.time * 1000 + weather.maxWeatherAge, nextBoundary),
-    scene: weather.pickScene(current),
+    validUntil: Math.min(now + MAX_SNAPSHOT_AGE, current.time * 1000 + weather.maxWeatherAge, solar.nextBoundary),
+    scene: weather.pickScene(current, now),
   };
   const snapshot = validateSnapshot(candidate, now);
   if (!snapshot) throw new Error('Unable to form a valid weather snapshot');

@@ -22,6 +22,7 @@
   let pending = false;
   let refreshTimer;
   let expiryTimer;
+  let solarTimer;
   let weatherFailed = false;
   let hasWeatherScene = false;
   const initialWeather = weather.readInitial();
@@ -37,6 +38,8 @@
   const scenes = {
     cloudy: { title: 'Cloudy', src: './assets/clouds.mp4?v=weather-scenes-80', webmSrc: './assets/clouds.webm?v=weather-scenes-46', rate: 0.5, description: 'White clouds billowing gently across a blue sky' },
     sunny: { title: 'Sunny', src: './assets/sunny.mp4?v=weather-scenes-80', webmSrc: './assets/sunny.webm?v=weather-scenes-34', rate: 1, description: 'A clear blue sky with bright sunlight and no clouds' },
+    sunset: { title: 'Sunset', src: './assets/sunset.mp4?v=weather-scenes-130', webmSrc: './assets/sunset.webm?v=weather-scenes-130', rate: 1, description: 'A quiet pink and lavender sunset sky' },
+    'cloudy-sunset': { title: 'Cloudy sunset', src: './assets/cloudy-sunset.mp4?v=weather-scenes-135', webmSrc: './assets/cloudy-sunset.webm?v=weather-scenes-135', rate: 0.25, description: 'Blue-gray clouds above a soft peach sunset sky' },
     overcast: { title: 'Overcast', src: './assets/overcast.mp4?v=weather-scenes-80', webmSrc: './assets/overcast.webm?v=weather-scenes-73', rate: 1, description: 'Soft gray overcast clouds drifting across a muted sky without falling rain' },
     rain: { title: 'Rain', src: './assets/rain.mp4?v=weather-scenes-80', webmSrc: './assets/rain.webm?v=weather-scenes-73', rate: 1, description: 'Visible fine rain falling beneath slowly moving overcast clouds' },
     fog: { title: 'Fog / Marine Layer', src: './assets/fog.mp4?v=weather-scenes-80', webmSrc: './assets/fog.webm?v=weather-scenes-36', rate: 1, description: 'Soft fog and low marine clouds drifting through diffuse coastal light' },
@@ -189,11 +192,6 @@
       if (result.error) throw result.error;
       if (!weather.isFresh(result.current)) throw new Error('Startup weather has expired');
       current = result.current;
-      // The snapshot uses sunrise/sunset at build time; a time-bucketed API
-      // reading must not undo that phase correction at the same observation time.
-      if (initialWeather && weather.readInitial() && current.time * 1000 <= initialWeather.fetchedAt) {
-        current = { ...current, is_day: initialWeather.current.is_day };
-      }
       fetchedAt = result.fetchedAt;
       weatherFailed = false;
       try { localStorage.setItem(cacheKey, JSON.stringify({ current, fetchedAt, weatherPolicy: weather.policyId })); } catch { /* Optional cache. */ }
@@ -223,6 +221,18 @@
     const dueAt = current && weather.isFresh(current) && !weatherFailed
       ? fetchedAt + weather.refreshMs : lastAttempt + 60000;
     refreshTimer = setTimeout(() => refreshWeather(), Math.max(250, dueAt - Date.now(), lastAttempt + 60000 - Date.now()));
+  }
+
+  function scheduleSolarTransition() {
+    clearTimeout(solarTimer);
+    if (document.hidden) return;
+    // Lighting follows San Francisco's clock even between weather requests.
+    const boundary = weather.solarPhase().nextBoundary;
+    solarTimer = setTimeout(() => {
+      useCurrentWeather();
+      showWeather();
+      scheduleSolarTransition();
+    }, Math.max(100, boundary - Date.now() + 25));
   }
 
   for (const [key, scene] of Object.entries(scenes)) {
@@ -323,8 +333,15 @@
   });
   document.addEventListener('visibilitychange', () => {
     applyPlaybackPreference();
-    if (document.hidden) clearTimeout(refreshTimer);
-    else refreshWeather();
+    if (document.hidden) {
+      clearTimeout(refreshTimer);
+      clearTimeout(solarTimer);
+    } else {
+      useCurrentWeather();
+      showWeather();
+      scheduleSolarTransition();
+      refreshWeather();
+    }
   });
   window.addEventListener('online', () => refreshWeather({ force: true }));
   reducedMotion.addEventListener('change', event => {
@@ -350,6 +367,7 @@
     if (scene.video.error) scene.handleVideoError();
   }
   showWeather();
+  scheduleSolarTransition();
   // Fetch on every page load, even if a cached scene can paint immediately.
   refreshWeather({ force: true });
 })();
