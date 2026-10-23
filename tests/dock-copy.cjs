@@ -118,14 +118,14 @@ async function test(name, body) {
     assert.equal(x.panel.getAttribute('aria-hidden'), 'false'); assert.equal(x.panel.inert, false);
     assert.equal(x.nodes['#weather-summary'].hidden, true); assert.equal(x.nodes['#bio-summary'].hidden, true);
   });
-  await test('successful confirmation stays open for 999ms and closes at 1000ms', async () => {
+  await test('successful confirmation stays open for 499ms and closes at 500ms', async () => {
     const x = setup(); x.click('mail'); await x.success();
-    await x.tick(999); assert.equal(x.visibleCopy(), true); await x.tick(1); assert.equal(x.open(), false);
+    await x.tick(499); assert.equal(x.visibleCopy(), true); await x.tick(1); assert.equal(x.open(), false);
     assert.equal(x.items.mail.getAttribute('aria-expanded'), 'false'); assert.equal(x.panel.inert, true);
   });
   await test('confirmation lifetime begins after successful copy, not the initial click', async () => {
     const x = setup(); x.click('mail'); await x.tick(5000);
-    assert.equal(x.visibleCopy(), false); await x.success(); await x.tick(999); assert.equal(x.visibleCopy(), true);
+    assert.equal(x.visibleCopy(), false); await x.success(); await x.tick(499); assert.equal(x.visibleCopy(), true);
     await x.tick(1); assert.equal(x.open(), false);
   });
   await test('clipboard rejection never displays a false success or throws unhandled rejection', async () => {
@@ -141,23 +141,24 @@ async function test(name, body) {
       assert.equal(x.visibleCopy(), false);
     }
   });
-  await test('repeated Email activation resets the one-second timer after latest success', async () => {
-    const x = setup(); x.click('mail'); await x.success(); await x.tick(800);
+  await test('repeated Email activation resets the half-second timer after latest success', async () => {
+    const x = setup(); x.click('mail'); await x.success(); await x.tick(400);
     x.click('mail'); assert.equal(x.requests.length, 2); await x.success();
-    await x.tick(200); assert.equal(x.visibleCopy(), true, 'old timer cannot close latest confirmation');
-    await x.tick(799); assert.equal(x.visibleCopy(), true); await x.tick(1); assert.equal(x.open(), false);
+    await x.tick(100); assert.equal(x.visibleCopy(), true, 'old timer cannot close latest confirmation');
+    await x.tick(399); assert.equal(x.visibleCopy(), true); await x.tick(1); assert.equal(x.open(), false);
   });
   await test('older pending copy cannot override newer success or reset its timer', async () => {
-    const x = setup(); x.click('mail'); x.click('mail'); await x.success(1); await x.tick(500);
-    await x.success(0); await x.tick(500); assert.equal(x.open(), false);
+    const x = setup(); x.click('mail'); x.click('mail'); await x.success(1); await x.tick(250);
+    await x.success(0); await x.tick(249); assert.equal(x.visibleCopy(), true);
+    await x.tick(1); assert.equal(x.open(), false);
   });
   await test('switching to Cloud or User cancels pending copies and confirmation autoclose', async () => {
     for (const view of ['cloud', 'user']) {
       const pending = setup(); pending.click('mail'); pending.click(view); await pending.success();
       assert.equal(pending.visibleCopy(), false); assert.equal(pending.open(), true);
       assert.equal(pending.items[view].getAttribute('aria-expanded'), 'true');
-      const shown = setup(); shown.click('mail'); await shown.success(); await shown.tick(500); shown.click(view);
-      await shown.tick(1000); assert.equal(shown.open(), true); assert.equal(shown.visibleCopy(), false);
+      const shown = setup(); shown.click('mail'); await shown.success(); await shown.tick(250); shown.click(view);
+      await shown.tick(500); assert.equal(shown.open(), true); assert.equal(shown.visibleCopy(), false);
       assert.equal(shown.items[view].getAttribute('aria-expanded'), 'true');
     }
   });
@@ -172,10 +173,10 @@ async function test(name, body) {
     assert.equal(x.open(), false); const cues = x.sounds.length; await x.tick(2000);
     assert.equal(x.open(), false); assert.equal(x.sounds.length, cues, 'old timer must stay cancelled');
   });
-  await test('keyboard-generated click and reduced motion preserve copy and one-second dismissal', async () => {
+  await test('keyboard-generated click and reduced motion preserve copy and half-second dismissal', async () => {
     const x = setup({ reduced: true }); x.click('mail', 0); assert.equal(x.requests[0].inClick, true);
     await x.success(); assert.equal(x.visibleCopy(), true); assert.equal(x.dock.dataset.instantExpand, 'true');
-    await x.tick(1000); assert.equal(x.open(), false);
+    await x.tick(499); assert.equal(x.visibleCopy(), true); await x.tick(1); assert.equal(x.open(), false);
   });
   await test('copy feedback does not overwrite weather copy and Escape restores focus to Email', async () => {
     const x = setup(); x.nodes['#weather-summary'].textContent = 'Currently 60°F and cloudy in San Francisco';

@@ -78,7 +78,7 @@
     setPanel('mail', instant);
     copyTimer = setTimeout(() => {
       if (request === copyRequest && activePanel === 'mail') setPanel(null, instant);
-    }, copied ? 1000 : 3000);
+    }, copied ? 500 : 3000);
   }
 
   function dismissPanel(instant = false) {
