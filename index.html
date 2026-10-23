@@ -50,10 +50,10 @@
     <link rel="stylesheet" href="./style.css?v=weather-scenes-118" />
     <script src="./sky.js?v=weather-scenes-118" defer></script>
     <script type="module" src="./dock-sounds.js?v=weather-scenes-79"></script>
-    <script src="./dock.js?v=weather-scenes-70" defer></script>
+    <script src="./dock.js?v=weather-scenes-119" defer></script>
   </head>
   <body>
-    <main class="sky" aria-label="Blue sky with white clouds floating by" aria-description="Cloud expands the dock to show current SF weather; User opens information about Chris; Email opens a message to Chris. Space pauses or resumes the sky. Escape pauses it." aria-keyshortcuts="Space Escape">
+    <main class="sky" aria-label="Blue sky with white clouds floating by" aria-description="Cloud expands the dock to show current SF weather; User opens information about Chris; Email copies Chris's email address. Space pauses or resumes the sky. Escape pauses it." aria-keyshortcuts="Space Escape">
       <noscript><img class="scene-poster" src="./assets/clouds-poster.webp?v=weather-scenes-79" alt="White clouds across a blue sky" /></noscript>
       <div class="scene-layer scene-cloudy" data-scene="cloudy">
         <img class="scene-poster" data-src="./assets/clouds-poster.webp?v=weather-scenes-79" data-preview="./assets/clouds-poster.preview-v118.webp" alt="" fetchpriority="high" />
@@ -103,6 +103,7 @@
         <section id="dock-panel" class="dock-panel" aria-label="Current weather in San Francisco" aria-hidden="true" inert>
           <div class="dock-panel-content">
             <p id="weather-summary" class="weather-summary">Checking weather in San Francisco…</p>
+            <p id="copy-summary" class="weather-summary" role="status" aria-live="polite" aria-atomic="true" hidden></p>
             <div id="bio-summary" class="bio-summary" tabindex="-1" hidden>
               <p>Conversation and vibes at Paradigm. Building a homestead in the Napa mountains.</p>
             </div>
@@ -141,7 +142,7 @@
               <path d="M6 21v-2a4 4 0 0 1 4 -4h4a4 4 0 0 1 4 4v2" />
             </svg>
           </button>
-          <a class="dock-item" href="mailto:chris@paradigm.xyz" data-view="mail" aria-label="Email" data-selected="false">
+          <button class="dock-item" type="button" data-view="mail" aria-label="Copy email address" aria-pressed="false" data-selected="false" aria-expanded="false" aria-controls="dock-panel">
             <svg aria-hidden="true" focusable="false"
               xmlns="http://www.w3.org/2000/svg"
               width="20"
@@ -156,7 +157,7 @@
               <path d="M3 7a2 2 0 0 1 2 -2h14a2 2 0 0 1 2 2v10a2 2 0 0 1 -2 2h-14a2 2 0 0 1 -2 -2v-10" />
               <path d="M3 7l9 6l9 -6" />
             </svg>
-          </a>
+          </button>
         </div>
       </div>
       <span id="weather-condition" class="visually-hidden" role="status"></span>

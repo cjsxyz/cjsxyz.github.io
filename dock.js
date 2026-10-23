@@ -3,12 +3,17 @@
   const items = [...dock.querySelectorAll('.dock-item')];
   const cloud = dock.querySelector('[data-view="cloud"]');
   const user = dock.querySelector('[data-view="user"]');
+  const mail = dock.querySelector('[data-view="mail"]');
   const panel = document.querySelector('#dock-panel');
   const panelContent = panel.querySelector('.dock-panel-content');
   const weatherSummary = panel.querySelector('#weather-summary');
+  const copySummary = panel.querySelector('#copy-summary');
   const biography = panel.querySelector('#bio-summary');
   const reducedMotion = window.matchMedia('(prefers-reduced-motion: reduce)');
   let activePanel = null;
+  let copyTimer;
+  let copyRequest = 0;
+  let copyPending = false;
 
   function playSound(cue) {
     try {
@@ -38,7 +43,9 @@
     if (open) {
       weatherSummary.hidden = view !== 'cloud';
       biography.hidden = view !== 'user';
-      panel.setAttribute('aria-label', view === 'cloud' ? 'Current weather in San Francisco' : 'About Chris');
+      copySummary.hidden = view !== 'mail';
+      panel.setAttribute('aria-label', view === 'cloud' ? 'Current weather in San Francisco'
+        : view === 'user' ? 'About Chris' : 'Email address');
     }
     dock.dataset.instantExpand = String(instant || reducedMotion.matches);
     dock.dataset.panelOpen = String(open);
@@ -46,22 +53,53 @@
     panel.inert = !open;
     cloud.setAttribute('aria-expanded', String(view === 'cloud'));
     user.setAttribute('aria-expanded', String(view === 'user'));
+    mail.setAttribute('aria-expanded', String(view === 'mail'));
     updatePanelHeight();
   }
 
+  function cancelCopyFeedback() {
+    clearTimeout(copyTimer);
+    copyRequest++;
+    copyPending = false;
+  }
+
+  async function copyEmail(instant) {
+    const request = copyRequest;
+    copyPending = true;
+    let copied = false;
+    try {
+      // Invoke directly in the click gesture, including on mobile Safari.
+      await navigator.clipboard.writeText('chris@paradigm.xyz');
+      copied = true;
+    } catch { /* Never show success when clipboard access was refused. */ }
+    if (request !== copyRequest) return;
+    copyPending = false;
+    copySummary.textContent = copied ? 'Copied!' : 'Couldn’t copy. Try again.';
+    setPanel('mail', instant);
+    copyTimer = setTimeout(() => {
+      if (request === copyRequest && activePanel === 'mail') setPanel(null, instant);
+    }, copied ? 1000 : 3000);
+  }
+
   function dismissPanel(instant = false) {
+    cancelCopyFeedback();
     if (!activePanel) return;
     setPanel(null, instant);
     playSound('close');
   }
 
   items.forEach(item => item.addEventListener('click', event => {
+    cancelCopyFeedback();
     select(item);
+    if (item === mail) {
+      playSound('select');
+      void copyEmail(event.detail === 0);
+      return;
+    }
     const view = item.dataset.view;
     const nextPanel = (item === cloud || item === user) && activePanel !== view ? view : null;
     setPanel(nextPanel, event.detail === 0);
-    playSound(nextPanel || view === 'mail' ? 'select' : 'close');
-    // The email link retains its native mailto navigation.
+    playSound(nextPanel ? 'select' : 'close');
   }));
 
   document.addEventListener('pointerdown', event => {
@@ -73,8 +111,8 @@
 
   // Dismiss the disclosure before the page's video shortcut handles Escape.
   document.addEventListener('keydown', event => {
-    if (event.key === 'Escape' && activePanel) {
-      const trigger = activePanel === 'cloud' ? cloud : user;
+    if (event.key === 'Escape' && (activePanel || copyPending)) {
+      const trigger = activePanel === 'cloud' ? cloud : activePanel === 'user' ? user : mail;
       const restoreFocus = panel.contains(document.activeElement);
       dismissPanel(true);
       if (restoreFocus) trigger.focus();
