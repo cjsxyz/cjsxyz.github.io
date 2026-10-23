@@ -1,4 +1,4 @@
-(() => {
+(async () => {
   const root = document.documentElement;
   const sky = document.querySelector('.sky');
   const status = document.querySelector('#scene-status');
@@ -6,7 +6,11 @@
   const portraitQuery = window.matchMedia('(max-width: 600px) and (max-aspect-ratio: 9/16)');
   // Start small in portrait; rotation can upgrade once, never downgrade again.
   let portraitMedia = portraitQuery.matches;
-  const weather = window.SFWeather;
+  // The weather module runs asynchronously so its request can start before
+  // DOM parsing finishes. It may finish on either side of this controller.
+  const weather = window.SFWeather || await new Promise(resolve => {
+    window.addEventListener('sf-weather-ready', () => resolve(window.SFWeather), { once: true });
+  });
   const condition = document.querySelector('#weather-condition');
   const freshness = document.querySelector('#weather-freshness');
   const weatherSummary = document.querySelector('#weather-summary');
@@ -40,6 +44,30 @@
   };
   let selected = Object.hasOwn(scenes, root.dataset.scene) ? root.dataset.scene : 'cloudy';
   let wantsToPlay = !reducedMotion.matches;
+  let selectionVersion = 0;
+
+  function loadPoster(scene, { fullQuality = false } = {}) {
+    const src = fullQuality || !wantsToPlay || scene.failed
+      ? scene.poster.dataset.src : scene.poster.dataset.preview;
+    if (scene.poster.getAttribute('src') === src) return;
+    scene.posterReady = false;
+    scene.posterFailed = false;
+    scene.poster.fetchPriority = 'high';
+    scene.poster.src = src;
+    scene.poster.decode().then(() => {
+      if (scene.poster.getAttribute('src') !== src) return;
+      scene.posterReady = scene.poster.naturalWidth > 0;
+      scene.reveal?.();
+    }).catch(() => {
+      if (scene.poster.getAttribute('src') !== src) return;
+      // A missing lightweight preview can still use the original still.
+      if (src !== scene.poster.dataset.src) loadPoster(scene, { fullQuality: true });
+      else {
+        scene.posterFailed = true;
+        scene.reveal?.();
+      }
+    });
+  }
 
   function updateState() {
     for (const [key, scene] of Object.entries(scenes)) {
@@ -53,8 +81,9 @@
     for (const [key, scene] of Object.entries(scenes)) {
       const video = scene.video;
       if (hasWeatherScene && key === selected && wantsToPlay && !document.hidden && !scene.failed) {
-        video.hidden = false;
+        video.hidden = video.readyState < 2;
         if (!video.getAttribute('src') || scene.needsFallback) {
+          video.hidden = true;
           video.src = scene.preferredSrc;
           scene.needsFallback = false;
         }
@@ -63,6 +92,9 @@
       } else {
         video.pause();
         if (!video.getAttribute('src') || scene.failed) video.hidden = true;
+        if (hasWeatherScene && key === selected && video.hidden && (!wantsToPlay || scene.failed)) {
+          loadPoster(scene, { fullQuality: true });
+        }
       }
     }
     updateState();
@@ -80,29 +112,27 @@
     if (!Object.hasOwn(scenes, key)) key = 'cloudy';
     selected = key;
     const scene = scenes[key];
-    // Opacity-hidden images still download. Hydrate only the scene being used,
-    // including its still image when reduced motion or video failure applies.
-    if (!scene.poster.getAttribute('src')) {
-      scene.poster.fetchPriority = 'high';
-      scene.poster.src = scene.poster.dataset.src;
-      scene.video.poster = scene.poster.dataset.src;
-    }
-    const reveal = () => {
-      if (selected !== key) return;
+    const version = ++selectionVersion;
+    scene.reveal = () => {
+      if (selected !== key || version !== selectionVersion) return;
+      const videoReady = !scene.failed && !scene.video.hidden && scene.video.readyState >= 2;
+      const mediaFailed = scene.posterFailed && (scene.failed || !wantsToPlay);
+      if (!scene.posterReady && !videoReady && !mediaFailed) return;
       root.dataset.instantSwitch = String(instant);
       root.dataset.scene = key;
       Object.entries(scenes).forEach(([name, item]) => {
         item.layer.setAttribute('aria-hidden', String(name !== key));
       });
+      scene.reveal = null;
     };
-    // Keep the previous scene visible while the next poster decodes, then use
-    // the existing crossfade. A failed poster must not block a working video.
-    if (scene.poster.complete) reveal();
-    else scene.poster.decode().catch(() => {}).then(reveal);
+    // The first decoded medium wins. Keep the old scene visible during a
+    // weather change, but never hold a ready video behind an image download.
+    loadPoster(scene);
     sky.setAttribute('aria-label', scenes[key].description);
     document.title = 'chris shu';
     status.textContent = `${scenes[key].title} sky selected.`;
     applyPlaybackPreference();
+    scene.reveal?.();
   }
 
   function showWeather() {
@@ -135,12 +165,19 @@
       return;
     }
     pending = true;
-    lastAttempt = Date.now();
+    const earlyRequest = weather.takeStartupRequest();
+    // A tab may finish parsing in the background and be opened much later.
+    const startup = earlyRequest && Date.now() - earlyRequest.startedAt < 60000 ? earlyRequest : null;
+    lastAttempt = startup?.startedAt ?? Date.now();
     const controller = new AbortController();
     const timeout = setTimeout(() => controller.abort(), 10000);
     try {
-      current = await weather.fetchCurrent({ signal: controller.signal });
-      fetchedAt = Date.now();
+      const result = startup ? await startup.result
+        : { current: await weather.fetchCurrent({ signal: controller.signal }), fetchedAt: Date.now() };
+      if (result.error) throw result.error;
+      if (!weather.isFresh(result.current)) throw new Error('Startup weather has expired');
+      current = result.current;
+      fetchedAt = result.fetchedAt;
       weatherFailed = false;
       try { localStorage.setItem(cacheKey, JSON.stringify({ current, fetchedAt })); } catch { /* Optional cache. */ }
       useCurrentWeather();
@@ -198,7 +235,14 @@
       if (key !== selected || !wantsToPlay || document.hidden) video.pause();
       updateState();
     });
-    video.addEventListener('playing', updateState);
+    const showVideoFrame = () => {
+      if (video.readyState < 2 || scene.failed) return;
+      video.hidden = false;
+      scene.reveal?.();
+      updateState();
+    };
+    video.addEventListener('loadeddata', showVideoFrame);
+    video.addEventListener('playing', showVideoFrame);
     video.addEventListener('pause', updateState);
     video.addEventListener('error', () => {
       // Ignore unrequested sources and duplicate errors while a retry waits
@@ -215,6 +259,8 @@
       scene.failed = true;
       video.hidden = true;
       video.pause();
+      if (key === selected) loadPoster(scene, { fullQuality: true });
+      scene.reveal?.();
       if (key === selected) status.textContent = `${scene.title} sky. Showing a still image because the video is unavailable.`;
       updateState();
     });
@@ -238,6 +284,7 @@
       // metadata restores its position before playback continues.
       const wasPlaying = !video.paused;
       video.pause();
+      video.hidden = true;
       video.src = scene.preferredSrc;
       scene.needsFallback = false;
       if (wasPlaying) applyPlaybackPreference();

@@ -106,9 +106,30 @@
     return current;
   }
 
+  // Start during HTML parsing, before the deferred scene controller. Resolve
+  // failures as data so an early rejection never becomes an unhandled promise.
+  let startupRequest = null;
+  if (document.currentScript?.hasAttribute('data-weather-startup') && !document.hidden) {
+    const controller = new AbortController();
+    const timeout = setTimeout(() => controller.abort(), 10000);
+    startupRequest = {
+      startedAt: Date.now(),
+      result: fetchCurrent({ signal: controller.signal }).then(
+        current => ({ current, fetchedAt: Date.now() }),
+        error => ({ error }),
+      ).finally(() => clearTimeout(timeout)),
+    };
+  }
+
   window.SFWeather = Object.freeze({
     endpoint, refreshMs, fetchCurrent, isFresh, summarize,
+    takeStartupRequest() {
+      const request = startupRequest;
+      startupRequest = null;
+      return request;
+    },
     pickScene: select,
     describe: current => conditionLabels[normalize(current).weather_code],
   });
+  window.dispatchEvent(new Event('sf-weather-ready'));
 })();

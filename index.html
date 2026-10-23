@@ -32,6 +32,8 @@
     <meta name="twitter:player:stream:content_type" content="video/mp4" />
     <meta name="twitter:image" content="https://chrisshu.com/assets/og-cloudy-v117.jpg" />
     <meta name="twitter:image:alt" content="White clouds against a pale blue sky" />
+    <link rel="preconnect" href="https://api.open-meteo.com" crossorigin />
+    <script src="./weather.js?v=weather-scenes-118" async fetchpriority="high" data-weather-startup></script>
     <link rel="icon" type="image/svg+xml" sizes="any" href="./assets/favicon.svg?v=weather-scenes-100" />
     <script>
       (() => {
@@ -45,9 +47,8 @@
         document.documentElement.dataset.scene = 'cloudy';
       })();
     </script>
-    <link rel="stylesheet" href="./style.css?v=weather-scenes-103" />
-    <script src="./weather.js?v=weather-scenes-102" defer></script>
-    <script src="./sky.js?v=weather-scenes-102" defer></script>
+    <link rel="stylesheet" href="./style.css?v=weather-scenes-118" />
+    <script src="./sky.js?v=weather-scenes-118" defer></script>
     <script type="module" src="./dock-sounds.js?v=weather-scenes-79"></script>
     <script src="./dock.js?v=weather-scenes-70" defer></script>
   </head>
@@ -55,46 +56,46 @@
     <main class="sky" aria-label="Blue sky with white clouds floating by" aria-description="Cloud expands the dock to show current SF weather; User opens information about Chris; Email opens a message to Chris. Space pauses or resumes the sky. Escape pauses it." aria-keyshortcuts="Space Escape">
       <noscript><img class="scene-poster" src="./assets/clouds-poster.webp?v=weather-scenes-79" alt="White clouds across a blue sky" /></noscript>
       <div class="scene-layer scene-cloudy" data-scene="cloudy">
-        <img class="scene-poster" data-src="./assets/clouds-poster.webp?v=weather-scenes-79" alt="" fetchpriority="high" />
+        <img class="scene-poster" data-src="./assets/clouds-poster.webp?v=weather-scenes-79" data-preview="./assets/clouds-poster.preview-v118.webp" alt="" fetchpriority="high" />
         <video id="sky-video" class="sky-scene" muted loop playsinline preload="none" disablepictureinpicture aria-label="White clouds drifting across a blue sky" hidden></video>
       </div>
       <div class="scene-layer scene-sunny" data-scene="sunny" aria-hidden="true">
-        <img class="scene-poster" data-src="./assets/sunny-poster.webp?v=weather-scenes-79" alt="" />
+        <img class="scene-poster" data-src="./assets/sunny-poster.webp?v=weather-scenes-79" data-preview="./assets/sunny-poster.preview-v118.webp" alt="" />
         <video id="sunny-video" class="sky-scene" muted loop playsinline preload="none" disablepictureinpicture aria-label="A clear blue sky with bright sunlight" hidden></video>
       </div>
       <div class="scene-layer scene-overcast" data-scene="overcast" aria-hidden="true">
-        <img class="scene-poster" data-src="./assets/overcast-poster.webp?v=weather-scenes-79" alt="" />
+        <img class="scene-poster" data-src="./assets/overcast-poster.webp?v=weather-scenes-79" data-preview="./assets/overcast-poster.preview-v118.webp" alt="" />
         <video id="overcast-video" class="sky-scene" muted loop playsinline preload="none" disablepictureinpicture aria-label="Soft gray overcast clouds drifting across a muted sky" hidden></video>
       </div>
       <div class="scene-layer scene-rain" data-scene="rain" aria-hidden="true">
-        <img class="scene-poster" data-src="./assets/rain-poster.webp?v=weather-scenes-79" alt="" />
+        <img class="scene-poster" data-src="./assets/rain-poster.webp?v=weather-scenes-79" data-preview="./assets/rain-poster.preview-v118.webp" alt="" />
         <video id="rain-video" class="sky-scene" muted loop playsinline preload="none" disablepictureinpicture aria-label="Soft rain beneath an overcast sky" hidden></video>
       </div>
       <div class="scene-layer scene-fog" data-scene="fog" aria-hidden="true">
         <div class="fog-atmosphere">
-          <img class="scene-poster" data-src="./assets/fog-poster.webp?v=weather-scenes-79" alt="" />
+          <img class="scene-poster" data-src="./assets/fog-poster.webp?v=weather-scenes-79" data-preview="./assets/fog-poster.preview-v118.webp" alt="" />
           <video id="fog-video" class="sky-scene" muted loop playsinline preload="none" disablepictureinpicture aria-label="Soft fog and low marine clouds drifting across the sky" hidden></video>
         </div>
       </div>
       <div class="scene-layer scene-night" data-scene="night" aria-hidden="true">
-        <img class="scene-poster" data-src="./assets/night-poster.webp?v=weather-scenes-79" alt="" />
+        <img class="scene-poster" data-src="./assets/night-poster.webp?v=weather-scenes-79" data-preview="./assets/night-poster.preview-v118.webp" alt="" />
         <video id="night-video" class="sky-scene" muted loop playsinline preload="none" disablepictureinpicture aria-label="Night clouds lit by moonlight from the upper right" hidden></video>
       </div>
       <div class="scene-layer scene-clear-night" data-scene="clear-night" aria-hidden="true">
-        <img class="scene-poster" data-src="./assets/clear-night-poster.webp?v=weather-scenes-79" alt="" />
+        <img class="scene-poster" data-src="./assets/clear-night-poster.webp?v=weather-scenes-79" data-preview="./assets/clear-night-poster.preview-v118.webp" alt="" />
         <video id="clear-night-video" class="sky-scene" muted loop playsinline preload="none" disablepictureinpicture aria-label="A clear deep blue night sky with soft light from the upper right" hidden></video>
       </div>
       <div class="scene-layer scene-overcast-night" data-scene="overcast-night" aria-hidden="true">
-        <img class="scene-poster" data-src="./assets/overcast-night-poster.webp?v=weather-scenes-79" alt="" />
+        <img class="scene-poster" data-src="./assets/overcast-night-poster.webp?v=weather-scenes-79" data-preview="./assets/overcast-night-poster.preview-v118.webp" alt="" />
         <video id="overcast-night-video" class="sky-scene" muted loop playsinline preload="none" disablepictureinpicture aria-label="A dim blue-gray cloud ceiling drifting slowly through the night" hidden></video>
       </div>
       <div class="scene-layer scene-night-rain" data-scene="night-rain" aria-hidden="true">
-        <img class="scene-poster" data-src="./assets/night-rain-poster.webp?v=weather-scenes-79" alt="" />
+        <img class="scene-poster" data-src="./assets/night-rain-poster.webp?v=weather-scenes-79" data-preview="./assets/night-rain-poster.preview-v118.webp" alt="" />
         <video id="night-rain-video" class="sky-scene" muted loop playsinline preload="none" disablepictureinpicture aria-label="Fine rain falling through a dark blue-gray night sky" hidden></video>
       </div>
       <div class="scene-layer scene-night-fog" data-scene="night-fog" aria-hidden="true">
         <div class="fog-atmosphere">
-        <img class="scene-poster" data-src="./assets/night-fog-poster.webp?v=weather-scenes-79" alt="" />
+        <img class="scene-poster" data-src="./assets/night-fog-poster.webp?v=weather-scenes-79" data-preview="./assets/night-fog-poster.preview-v118.webp" alt="" />
         <video id="night-fog-video" class="sky-scene" muted loop playsinline preload="none" disablepictureinpicture aria-label="Soft coastal fog moving through dim nighttime light" hidden></video>
         </div>
       </div>
