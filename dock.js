@@ -76,6 +76,7 @@
     copyPending = false;
     copySummary.textContent = copied ? 'Copied!' : 'Couldn’t copy. Try again.';
     setPanel('mail', instant);
+    if (copied) playSound('success');
     copyTimer = setTimeout(() => {
       if (request === copyRequest && activePanel === 'mail') setPanel(null, instant);
     }, copied ? 500 : 3000);
@@ -92,7 +93,8 @@
     cancelCopyFeedback();
     select(item);
     if (item === mail) {
-      playSound('select');
+      // Unlock in the gesture so Safari can play the async copy confirmation.
+      try { void window.DockSounds?.unlock(); } catch { /* Sound is optional. */ }
       void copyEmail(event.detail === 0);
       return;
     }

@@ -36,7 +36,7 @@ class Element {
 
 function setup({ clipboard = 'available', reduced = false } = {}) {
   let now = 0, timerId = 0, inClick = false;
-  const timers = new Map(), requests = [], sounds = [];
+  const timers = new Map(), requests = [], sounds = [], unlocks = [];
   const doc = new Element(), win = new Element(), dock = new Element(), panel = new Element();
   const content = new Element(), media = new Element(), outside = new Element();
   media.matches = reduced; panel.appendChild(content); dock.appendChild(panel);
@@ -60,7 +60,7 @@ function setup({ clipboard = 'available', reduced = false } = {}) {
   doc.querySelector = selector => nodes[selector];
   doc.activeElement = outside;
   win.matchMedia = () => media;
-  win.DockSounds = { play: cue => sounds.push(cue) };
+  win.DockSounds = { play: cue => sounds.push(cue), unlock() { unlocks.push({ inClick }); return Promise.resolve(true); } };
   const navigator = {};
   if (clipboard !== 'missing') navigator.clipboard = {
     writeText(value) {
@@ -75,7 +75,7 @@ function setup({ clipboard = 'available', reduced = false } = {}) {
   });
   vm.runInContext(source, context, { filename: 'dock.js' });
   return {
-    dock, panel, content, nodes, items, requests, sounds, doc, win, outside,
+    dock, panel, content, nodes, items, requests, sounds, unlocks, doc, win, outside,
     open: () => dock.dataset.panelOpen === 'true',
     visibleCopy: () => dock.dataset.panelOpen === 'true' && Object.values(nodes).some(node => !node.hidden && node.textContent === 'Copied!'),
     click(view, detail = 1) { inClick = true; try { return items[view].emit('click', { detail }); } finally { inClick = false; } },
@@ -113,7 +113,10 @@ async function test(name, body) {
     const x = setup(); x.click('mail');
     assert.equal(x.requests.length, 1); assert.equal(x.requests[0].value, 'chris@paradigm.xyz');
     assert.equal(x.requests[0].inClick, true); assert.equal(x.visibleCopy(), false);
+    assert.deepEqual(x.unlocks, [{ inClick: true }], 'audio unlock stays inside the trusted gesture');
+    assert.deepEqual(x.sounds, [], 'no selection or success cue before clipboard resolves');
     await x.success(); assert.equal(x.visibleCopy(), true);
+    assert.deepEqual(x.sounds, ['success']);
     assert.equal(x.items.mail.getAttribute('aria-expanded'), 'true');
     assert.equal(x.panel.getAttribute('aria-hidden'), 'false'); assert.equal(x.panel.inert, false);
     assert.equal(x.nodes['#weather-summary'].hidden, true); assert.equal(x.nodes['#bio-summary'].hidden, true);
@@ -130,6 +133,7 @@ async function test(name, body) {
   });
   await test('clipboard rejection never displays a false success or throws unhandled rejection', async () => {
     const x = setup(); x.click('mail'); await x.failure();
+    assert.deepEqual(x.sounds, [], 'failed copy must not sound successful');
     assert.equal(x.visibleCopy(), false);
     assert.equal(x.nodes['#copy-summary'].textContent, 'Couldn’t copy. Try again.');
     assert.equal(x.open(), true); await x.tick(2999); assert.equal(x.open(), true);
@@ -139,6 +143,7 @@ async function test(name, body) {
     for (const clipboard of ['missing', 'throws']) {
       const x = setup({ clipboard }); assert.doesNotThrow(() => x.click('mail')); await flush();
       assert.equal(x.visibleCopy(), false);
+      assert.deepEqual(x.sounds, []);
     }
   });
   await test('repeated Email activation resets the half-second timer after latest success', async () => {
@@ -150,11 +155,13 @@ async function test(name, body) {
   await test('older pending copy cannot override newer success or reset its timer', async () => {
     const x = setup(); x.click('mail'); x.click('mail'); await x.success(1); await x.tick(250);
     await x.success(0); await x.tick(249); assert.equal(x.visibleCopy(), true);
+    assert.deepEqual(x.sounds, ['success'], 'superseded requests cannot play another success');
     await x.tick(1); assert.equal(x.open(), false);
   });
   await test('switching to Cloud or User cancels pending copies and confirmation autoclose', async () => {
     for (const view of ['cloud', 'user']) {
       const pending = setup(); pending.click('mail'); pending.click(view); await pending.success();
+      assert.deepEqual(pending.sounds, ['select'], 'dismissed pending copy cannot play a success cue');
       assert.equal(pending.visibleCopy(), false); assert.equal(pending.open(), true);
       assert.equal(pending.items[view].getAttribute('aria-expanded'), 'true');
       const shown = setup(); shown.click('mail'); await shown.success(); await shown.tick(250); shown.click(view);
