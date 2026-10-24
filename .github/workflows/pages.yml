@@ -94,6 +94,7 @@ jobs:
       - name: Check weather startup and dock behavior
         run: |
           node tests/startup.cjs
+          node --test tests/recording.cjs
           node tests/weather-policy.cjs
           node tests/dock-copy.cjs
           node --test tests/weather-snapshot.test.mjs

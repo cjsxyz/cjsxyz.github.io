@@ -9,6 +9,7 @@
   const weatherSummary = panel.querySelector('#weather-summary');
   const copySummary = panel.querySelector('#copy-summary');
   const biography = panel.querySelector('#bio-summary');
+  const homesteadLink = panel.querySelector('#homestead-link');
   const reducedMotion = window.matchMedia('(prefers-reduced-motion: reduce)');
   let activePanel = null;
   let copyTimer;
@@ -99,10 +100,21 @@
       return;
     }
     const view = item.dataset.view;
-    const nextPanel = (item === cloud || item === user) && activePanel !== view ? view : null;
+    // Weather always restores the current live scene, including when closing its drawer.
+    // Opening User leaves the active background alone.
+    if (item === cloud) {
+      try { window.RecordingPlayer?.select('weather'); } catch { /* The drawer still works if playback is unavailable. */ }
+    }
+    const nextPanel = activePanel !== view ? view : null;
     setPanel(nextPanel, event.detail === 0);
     playSound(nextPanel ? 'select' : 'close');
   }));
+
+  homesteadLink.addEventListener('click', () => {
+    // Keep audio playback in the trusted gesture, including on mobile Safari.
+    try { window.RecordingPlayer?.select('lake'); } catch { /* The biography stays usable if playback is unavailable. */ }
+    playSound('select');
+  });
 
   document.addEventListener('pointerdown', event => {
     if (!dock.contains(event.target)) dismissPanel();
@@ -137,7 +149,7 @@
     items[target].focus();
   });
 
-  // Keep the disclosure fitted to either view and to viewport/text-size changes.
+  // Keep the disclosure fitted to its content and to viewport/text-size changes.
   new ResizeObserver(updatePanelHeight).observe(panelContent);
   reducedMotion.addEventListener('change', () => setPanel(activePanel, true));
 })();

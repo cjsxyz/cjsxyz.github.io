@@ -10,7 +10,7 @@
   const embedded = poster.hasAttribute('data-initial-poster') ? poster.getAttribute('src') : null;
   if (embedded?.startsWith('data:image/webp;base64,')) poster.dataset.preview = embedded;
   const initial = window.SFWeather?.readInitial();
-  if (!initial || media.scene !== initial.scene) return;
+  if (!initial || media.scene !== initial.scene || document.documentElement.dataset.background === 'recording') return;
   const video = layer.querySelector('video');
   const reduced = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
   document.documentElement.dataset.scene = initial.scene;

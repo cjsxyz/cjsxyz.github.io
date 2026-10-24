@@ -13,7 +13,7 @@ const startupSource = fs.readFileSync(path.join(site, 'startup.js'), 'utf8');
 const sceneMedia = vm.runInNewContext(`(${/const scenes = (\{[\s\S]*?\n  \});/.exec(skySource)[1]})`);
 const markup = fs.readFileSync(path.join(site, 'index.html'), 'utf8');
 const scenes = [...skySource.matchAll(/^    (?:([\w-]+)|['"]([\w-]+)['"]): \{ title:/gm)].map(m => m[1] || m[2]);
-const assets = Object.fromEntries([...markup.matchAll(/data-scene="([^"]+)"[^>]*>[\s\S]*?<img\b([^>]+)>/g)].map(m => [m[1], {
+const assets = Object.fromEntries([...markup.matchAll(/data-scene="([^"]+)"[^>]*>[\s\S]*?<img\b([^>]+)>/g)].filter(m => scenes.includes(m[1])).map(m => [m[1], {
   full: /data-src="([^"]+)"/.exec(m[2])[1],
   preview: /data-preview="([^"]+)"/.exec(m[2])[1],
 }]));
@@ -86,11 +86,12 @@ class Video extends Element {
 
 function setup({ cache = null, hidden = false, reduced = false, webm = true,
   automaticPosters = true, portrait = false, boot = 'weather-first', startup = true,
-  storageThrows = false, initial = null, start = START } = {}) {
+  storageThrows = false, initial = null, start = START, recording = false } = {}) {
   let now = start, nextTimer = 0;
   const root = new Element(), doc = new Element(), win = new Element();
   const motion = new Element(), viewport = new Element();
   root.dataset.scene = 'cloudy'; doc.documentElement = root; doc.hidden = hidden;
+  if (recording) { root.dataset.background = 'recording'; root.dataset.scene = 'recording'; }
   motion.matches = reduced; viewport.matches = portrait;
   win.matchMedia = query => query.includes('prefers-reduced-motion') ? motion : viewport;
   const videos = Object.fromEntries(scenes.map(key => [key, new Video(webm)]));
@@ -99,18 +100,30 @@ function setup({ cache = null, hidden = false, reduced = false, webm = true,
     querySelector: selector => selector === 'video' ? videos[key] : posters[key],
   })]));
   const elements = Object.fromEntries(['.sky', '#scene-status', '#weather-condition', '#weather-freshness', '#weather-summary'].map(key => [key, new Element()]));
+  const recordingVideo = new Video(webm);
+  let weatherScene = root.dataset.scene === 'recording' ? 'cloudy' : root.dataset.scene;
+  elements['#recording-video'] = recordingVideo;
+  if (recording) {
+    recordingVideo.src = './assets/recording.mp4'; recordingVideo.paused = false;
+    recordingVideo.currentTime = 42; recordingVideo.muted = false;
+    elements['#recording-video'] = recordingVideo;
+    elements['.sky'].setAttribute('aria-label', 'Personal recording');
+    elements['#scene-status'].textContent = 'Recording playing';
+  }
   if (initial) {
     elements['#initial-weather'] = Object.assign(new Element(), { textContent: JSON.stringify(initial) });
     elements['#initial-media'] = Object.assign(new Element(), { textContent: JSON.stringify({
       ...sceneMedia[initial.scene], scene: initial.scene,
     }) });
-    if (posters[initial.scene]) {
+    if (!recording && posters[initial.scene]) {
       root.dataset.scene = initial.scene;
       posters[initial.scene].setAttribute('data-initial-poster', '');
       posters[initial.scene].src = 'data:image/webp;base64,cHJldmlldw==';
     }
   }
-  doc.querySelector = selector => elements[selector] || layers[/data-scene="([^"]+)"/.exec(selector)?.[1]] || null;
+  doc.querySelector = selector => {
+    return elements[selector] || layers[/data-scene="([^"]+)"/.exec(selector)?.[1]] || null;
+  };
   doc.querySelectorAll = selector => selector === '.scene-layer' ? Object.values(layers) : [];
   const timers = new Map(), requests = [], writes = [];
   const location = { href: 'https://chrisshu.com/' };
@@ -150,8 +163,26 @@ function setup({ cache = null, hidden = false, reduced = false, webm = true,
   const current = changes => ({ time: Math.floor(now / 1000), weather_code: 2, is_day: 1,
     temperature_2m: 60, cloud_cover: 62, direct_normal_irradiance_instant: 600, ...changes });
   return {
-    root, doc, win, motion, viewport, videos, posters, layers, elements, requests, writes, runWeather, runSky, runInitial, current,
+    root, doc, win, motion, viewport, videos, posters, layers, elements, requests, writes, runWeather, runSky, runInitial, current, recordingVideo,
     summary: elements['#weather-summary'], status: elements['#scene-status'], get now() { return now; },
+    // Emulate the public recording controller's mode handoff. Its media/audio
+    // implementation is exercised separately in tests/recording.cjs.
+    background(view) {
+      if (view === 'lake') {
+        weatherScene = root.dataset.scene === 'recording' ? weatherScene : root.dataset.scene;
+        root.dataset.background = 'recording'; root.dataset.scene = 'recording';
+        for (const video of Object.values(videos)) video.pause();
+        if (!recordingVideo.src) recordingVideo.src = './assets/recording.mp4';
+        recordingVideo.paused = false; recordingVideo.muted = false; recordingVideo.currentTime = 42;
+        elements['.sky'].setAttribute('aria-label', 'Personal recording');
+        elements['#scene-status'].textContent = 'Recording playing';
+      } else {
+        recordingVideo.pause(); root.dataset.background = 'weather';
+        if (root.dataset.scene === 'recording') root.dataset.scene = weatherScene;
+      }
+      for (const [key, layer] of Object.entries(layers)) layer.setAttribute('aria-hidden', String(root.dataset.scene !== key));
+      win.emit('background-change');
+    },
     hydrated: () => scenes.filter(key => posters[key].src),
     loaded: () => scenes.filter(key => videos[key].src),
     playing: () => scenes.filter(key => !videos[key].paused),
@@ -183,11 +214,11 @@ const cached = (changes, at = START) => ({ current: { time: Math.floor(at / 1000
   temperature_2m: 60, cloud_cover: 62, direct_normal_irradiance_instant: 600, ...changes }, fetchedAt: at, weatherPolicy: 'east-cut-nbm-nearest-v1' });
 
 (async () => {
-  await test('HTML starts async weather early and keeps all scene media deferred', async () => {
+  await test('HTML starts async weather early and keeps weather scene media deferred', async () => {
     assert.match(markup, /<script\b[^>]*src="\.\/weather\.js[^>]*\basync\b[^>]*data-weather-startup/);
     assert.ok(markup.indexOf('data-weather-startup') < markup.indexOf('rel="stylesheet"'));
     assert.match(markup, /<link\b[^>]*rel="preconnect"[^>]*api\.open-meteo\.com/);
-    const runtime = markup.replace(/<noscript\b[^>]*>[\s\S]*?<\/noscript>/g, '');
+    const runtime = scenes.map(key => new RegExp(`data-scene="${key}"[^>]*>([\\s\\S]*?)<\\/video>`).exec(markup)?.[1] + '</video>').join('\n');
     assert.equal(Object.keys(assets).length, scenes.length);
     for (const match of runtime.matchAll(/<(?:img|video)\b[^>]*(?:scene-poster|sky-scene)[^>]*>/g)) {
       assert.doesNotMatch(match[0], /(?<![\w-])(?:src|poster)\s*=/);
@@ -596,6 +627,125 @@ const cached = (changes, at = START) => ({ current: { time: Math.floor(at / 1000
     const x = setup(); await x.resolve(0, { weather_code: 61 });
     assert.equal(x.root.dataset.instantSwitch, 'true');
     await x.refresh({ weather_code: 45 }); assert.equal(x.root.dataset.instantSwitch, 'false');
+  });
+  function assertRecordingUntouched(x) {
+    assert.equal(x.root.dataset.background, 'recording');
+    assert.equal(x.root.dataset.scene, 'recording');
+    assert.equal(x.elements['.sky'].getAttribute('aria-label'), 'Personal recording');
+    assert.equal(x.status.textContent, 'Recording playing');
+    assert.equal(x.recordingVideo.paused, false);
+    assert.equal(x.recordingVideo.muted, false);
+    assert.equal(x.recordingVideo.currentTime, 42);
+    assert.equal(x.recordingVideo.sourceWrites.length, 1);
+    assert.deepEqual(x.loaded(), []); assert.deepEqual(x.hydrated(), []);
+    assert.deepEqual(x.playing(), [], 'weather is dormant while the recording is active');
+  }
+  await test('recording mode keeps live weather in the drawer without requesting any weather media', async () => {
+    const x = setup({ recording: true, boot: 'sky-first' });
+    assertRecordingUntouched(x); assert.equal(x.requests.length, 0);
+    x.runWeather(); await flush();
+    assertRecordingUntouched(x); assert.match(x.summary.textContent, /Checking weather/);
+    await x.resolve(0, { weather_code: 0, cloud_cover: 0 });
+    assert.match(x.summary.textContent, /sunny in San Francisco$/);
+    for (const [weather_code, direct_normal_irradiance_instant, text] of [
+      [61, 0, 'raining'], [45, 0, 'foggy'], [3, 0, 'cloudy'],
+    ]) {
+      await x.refresh({ weather_code, direct_normal_irradiance_instant });
+      assert.match(x.summary.textContent, new RegExp(`${text} in San Francisco$`));
+      assertRecordingUntouched(x);
+    }
+    await x.tick(5 * 60000);
+    assert.equal(x.requests.length, 5, 'live weather still refreshes every five minutes');
+  });
+  await test('recording mode leaves playback and controls independent across solar boundaries and weather expiry', async () => {
+    const start = solarClock.solarPhase(START).sunsetStart - 1000;
+    const observation = Math.floor((start - 29 * 60000) / 1000);
+    const cache = cached({ time: observation, weather_code: 0, cloud_cover: 0 }, start);
+    const x = setup({ recording: true, start, cache }); await flush();
+    assert.match(x.summary.textContent, /sunny in San Francisco$/);
+    await x.tick(1100);
+    assert.match(x.summary.textContent, /clear in San Francisco$/);
+    assertRecordingUntouched(x);
+    await x.tick(observation * 1000 + 30 * 60000 - x.now + 1);
+    assert.doesNotMatch(x.summary.textContent, /^Currently /);
+    assertRecordingUntouched(x);
+    x.visible(false); x.reduce(true); x.visible(true); await flush();
+    x.viewport.emit('change', { matches: false });
+    const event = { code: 'Space', target: { closest() { return null; } }, preventDefault() { throw new Error('Weather intercepted a recording shortcut'); } };
+    x.doc.emit('keydown', event);
+    assertRecordingUntouched(x);
+  });
+  await test('a recording remains independent through cold weather failure and recovery', async () => {
+    const x = setup({ recording: true }); await x.reject(0);
+    assert.match(x.summary.textContent, /Weather unavailable/); assertRecordingUntouched(x);
+    await x.tick(60000); await x.resolve(1, { weather_code: 61 });
+    assert.match(x.summary.textContent, /raining in San Francisco$/); assertRecordingUntouched(x);
+  });
+  await test('weather continues refreshing during the lake and returns to the latest condition on Cloud', async () => {
+    const x = setup(); await x.resolve(0, { weather_code: 0, cloud_cover: 0 });
+    assert.equal(x.root.dataset.scene, 'sunny'); assert.deepEqual(x.playing(), ['sunny']);
+    x.background('lake'); assert.deepEqual(x.playing(), []);
+    await x.refresh({ weather_code: 61 });
+    assert.equal(x.root.dataset.scene, 'recording'); assert.equal(x.recordingVideo.paused, false);
+    assert.equal(x.elements['.sky'].getAttribute('aria-label'), 'Personal recording');
+    assert.equal(x.summary.textContent, 'Currently 60°F and raining in San Francisco');
+    assert.deepEqual(x.loaded(), ['sunny'], 'the hidden rainy scene is not downloaded');
+    await x.refresh({ weather_code: 45 });
+    assert.equal(x.root.dataset.scene, 'recording'); assert.deepEqual(x.loaded(), ['sunny']);
+    x.background('weather'); await flush();
+    assert.equal(x.root.dataset.scene, 'fog'); assert.deepEqual(x.playing(), ['fog']);
+    assert.equal(x.recordingVideo.paused, true);
+    assert.equal(x.layers.fog.getAttribute('aria-hidden'), 'false');
+    assert.equal(x.layers.sunny.getAttribute('aria-hidden'), 'true');
+    assert.deepEqual(x.loaded(), ['sunny', 'fog'], 'return skips the superseded rainy condition');
+  });
+  await test('late weather poster and video events cannot replace or restart a selected lake', async () => {
+    const x = setup({ automaticPosters: false }); await x.resolve(0, { weather_code: 61 });
+    assert.equal(x.root.dataset.scene, 'cloudy');
+    x.background('lake');
+    await x.posterReady('rain'); x.videos.rain.frame();
+    x.videos.rain.paused = false; x.videos.rain.frame('playing');
+    assert.equal(x.root.dataset.scene, 'recording'); assert.deepEqual(x.playing(), []);
+    assert.equal(x.recordingVideo.paused, false);
+    assert.equal(x.elements['.sky'].getAttribute('aria-label'), 'Personal recording');
+    assert.equal(x.layers.rain.getAttribute('aria-hidden'), 'true');
+    x.background('weather'); await flush();
+    assert.equal(x.root.dataset.scene, 'rain'); assert.deepEqual(x.playing(), ['rain']);
+    assert.equal(x.videos.rain.sourceWrites.length, 1, 'completed media is reused on return');
+  });
+  await test('late weather errors defer fallback until returning from the lake', async () => {
+    const x = setup(); await x.resolve(0, { weather_code: 61 });
+    x.background('lake'); x.videos.rain.fail(); x.videos.rain.fail(); await flush();
+    assert.equal(x.root.dataset.scene, 'recording'); assert.deepEqual(x.playing(), []);
+    assert.equal(x.videos.rain.sourceWrites.length, 1, 'no hidden MP4 fallback download');
+    x.background('weather'); await flush();
+    assert.match(x.videos.rain.src, /rain\.mp4\?/); assert.deepEqual(x.playing(), ['rain']);
+    assert.equal(x.videos.rain.sourceWrites.length, 2);
+  });
+  await test('returning from lake with expired weather stays paused until a fresh response arrives', async () => {
+    const x = setup(); await x.resolve(0, { weather_code: 61 });
+    x.background('lake'); x.visible(false); await x.tick(1800001);
+    assert.doesNotMatch(x.summary.textContent, /^Currently /);
+    x.visible(true); await flush();
+    const requestCount = x.requests.length;
+    assert.equal(requestCount, 2, 'foreground checks expired weather');
+    x.background('weather'); await flush();
+    assert.equal(x.root.dataset.scene, 'rain', 'last weather frame is a paused fallback');
+    assert.deepEqual(x.playing(), []); assert.equal(x.recordingVideo.paused, true);
+    assert.equal(x.requests.length, requestCount, 'Cloud reuses the pending refresh');
+    assert.doesNotMatch(x.summary.textContent, /^Currently /);
+    await x.resolve(requestCount - 1, { weather_code: 0, cloud_cover: 0 });
+    assert.equal(x.root.dataset.scene, 'sunny'); assert.deepEqual(x.playing(), ['sunny']);
+    assert.match(x.summary.textContent, /sunny in San Francisco$/);
+  });
+  await test('returning from lake applies current solar phase rather than its previous daytime video', async () => {
+    const boundary = solarClock.solarPhase(START).sunset;
+    const x = setup({ start: boundary - 1000 }); await x.resolve(0, { weather_code: 61 });
+    x.background('lake'); await x.tick(1025);
+    assert.equal(x.root.dataset.scene, 'recording'); assert.deepEqual(x.loaded(), ['rain']);
+    x.background('weather'); await flush();
+    assert.equal(x.root.dataset.scene, 'night-rain'); assert.deepEqual(x.playing(), ['night-rain']);
+    assert.equal(x.requests.length, 1, 'a still-fresh reading does not need a second fetch');
   });
   await test('no asynchronous code path emits an unhandled rejection', async () => {
     await flush(); assert.deepEqual(unhandled.map(error => String(error)), []);

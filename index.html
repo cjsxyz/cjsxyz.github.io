@@ -1,5 +1,5 @@
 <!doctype html>
-<html lang="en">
+<html lang="en" data-background="weather" data-scene="cloudy">
   <head>
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
@@ -44,21 +44,20 @@
           url.searchParams.delete('mode');
           history.replaceState(history.state, '', url);
         }
-        const initial = window.SFWeather?.readInitial();
-        // Keep the published sky visible if its weather timestamp has expired.
-        // The controller refreshes the weather without flashing an empty sky.
-        document.documentElement.dataset.scene = initial?.scene || document.documentElement.dataset.scene || 'cloudy';
       })();
     </script>
-    <link rel="stylesheet" href="./style.css?v=weather-scenes-133" />
-    <script src="./sky.js?v=weather-scenes-136" defer></script>
+    <link rel="stylesheet" href="./style.css?v=weather-scenes-153" />
+    <script src="./sky.js?v=weather-scenes-152" defer></script>
     <script type="module" src="./dock-sounds.js?v=weather-scenes-124"></script>
-    <script src="./dock.js?v=weather-scenes-124" defer></script>
+    <script src="./dock.js?v=weather-scenes-152" defer></script>
   </head>
   <body>
-    <main class="sky" aria-label="Blue sky with white clouds floating by" aria-description="Cloud expands the dock to show current SF weather; User opens information about Chris; Email copies Chris's email address. Space pauses or resumes the sky. Escape pauses it." aria-keyshortcuts="Space Escape">
-      <noscript><img class="scene-poster" src="./assets/clouds-poster.webp?v=weather-scenes-79" alt="White clouds across a blue sky" /></noscript>
-      <div class="scene-layer scene-cloudy" data-scene="cloudy">
+    <main class="sky" aria-label="San Francisco weather" aria-description="Cloud shows current San Francisco weather. User opens information about Chris; homestead plays a lake video with birdsong. Email copies Chris's email address. Space pauses or resumes the video. Escape pauses it." aria-keyshortcuts="Space Escape">
+      <div class="scene-layer scene-recording" data-scene="recording" aria-hidden="true">
+        <img class="scene-poster" data-src="./assets/recording-poster-v140.webp" data-preview="./assets/recording-preview-v140.webp" alt="" fetchpriority="high" />
+        <video id="recording-video" class="sky-scene" loop playsinline preload="none" disablepictureinpicture aria-label="A lake and mountains with birdsong" hidden></video>
+      </div>
+      <div class="scene-layer scene-cloudy" data-scene="cloudy" aria-hidden="true">
         <img class="scene-poster" data-src="./assets/clouds-poster.webp?v=weather-scenes-79" data-preview="./assets/clouds-poster.preview-v118.webp" alt="" fetchpriority="high" />
         <video id="sky-video" class="sky-scene" muted loop playsinline preload="none" disablepictureinpicture aria-label="White clouds drifting across a blue sky" hidden></video>
       </div>
@@ -110,6 +109,9 @@
         <video id="night-fog-video" class="sky-scene" muted loop playsinline preload="none" disablepictureinpicture aria-label="Soft coastal fog moving through dim nighttime light" hidden></video>
         </div>
       </div>
+      <span id="recording-status" class="visually-hidden" role="status"></span>
+      <script type="application/json" id="recording-media">{"src":"./assets/recording-v148.mp4","mobileSrc":"./assets/recording-mobile-v148.mp4","poster":"./assets/recording-poster-v140.webp","preview":"./assets/recording-preview-v140.webp"}</script>
+      <script src="./recording.js?v=152" data-recording-player defer></script>
       <!-- WEATHER_STARTUP -->
       <div class="icon-dock" role="group" aria-label="Dock" data-selection="cloud" data-panel-open="false">
         <section id="dock-panel" class="dock-panel" aria-label="Current weather in San Francisco" aria-hidden="true" inert>
@@ -117,7 +119,8 @@
             <p id="weather-summary" class="weather-summary">Checking weather in San Francisco…</p>
             <p id="copy-summary" class="weather-summary" role="status" aria-live="polite" aria-atomic="true" hidden></p>
             <div id="bio-summary" class="bio-summary" tabindex="-1" hidden>
-              <p>Conversations and vibes at <strong><a href="https://www.paradigm.xyz/" target="_blank" rel="noopener noreferrer">Paradigm</a></strong>. Building a homestead in the Napa mountains.</p>
+              <p>Conversations and vibes at <strong><a href="https://www.paradigm.xyz/" target="_blank" rel="noopener noreferrer">Paradigm</a></strong>.</p>
+              <p>Building a <button id="homestead-link" class="bio-action" type="button" aria-label="Play the homestead lake video">homestead</button> in the Napa mountains.</p>
             </div>
             <div class="dock-divider" aria-hidden="true"></div>
           </div>

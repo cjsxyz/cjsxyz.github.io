@@ -193,24 +193,56 @@ async function initialMedia(sourceRoot, html, skySource, scene) {
   const layer = new RegExp(`data-scene="${scene}"[^>]*>([\\s\\S]*?)<video\\b`).exec(html)?.[1];
   const preview = /data-preview="([^"]+)"/.exec(layer || '')?.[1];
   if (!src || !webmSrc || !preview || !Number.isFinite(rate)) throw new Error(`Incomplete media manifest for ${scene}`);
-  const local = url => {
-    if (!url.startsWith('./assets/')) throw new Error('Initial scene media must be local assets');
-    const file = path.resolve(sourceRoot, url.split('?')[0]);
-    if (!file.startsWith(path.join(sourceRoot, 'assets') + path.sep)) throw new Error('Media path escapes assets');
-    return file;
-  };
-  const physicalRoot = await realpath(sourceRoot);
-  const verifiedLocal = async url => {
-    const file = local(url);
-    if (await realpath(file) !== path.join(physicalRoot, path.relative(sourceRoot, file))) {
-      throw new Error('Initial scene media cannot traverse a symbolic link');
-    }
-    return file;
-  };
+  const verifiedLocal = await localAssetVerifier(sourceRoot);
   const poster = await readFile(await verifiedLocal(preview));
   if (poster.length > 100000) throw new Error('Initial preview is unexpectedly large');
   await Promise.all([src, webmSrc].map(async url => stat(await verifiedLocal(url))));
   return { scene, poster: `data:image/webp;base64,${poster.toString('base64')}`, src, webmSrc, rate };
+}
+
+async function localAssetVerifier(sourceRoot) {
+  const physicalRoot = await realpath(sourceRoot);
+  return async url => {
+    if (typeof url !== 'string' || !url.startsWith('./assets/')) throw new Error('Initial scene media must be local assets');
+    const file = path.resolve(sourceRoot, url.split('?')[0]);
+    if (!file.startsWith(path.join(sourceRoot, 'assets') + path.sep)) throw new Error('Media path escapes assets');
+    if (await realpath(file) !== path.join(physicalRoot, path.relative(sourceRoot, file))) {
+      throw new Error('Initial scene media cannot traverse a symbolic link');
+    }
+    if (!(await stat(file)).isFile()) throw new Error('Initial scene media must be files');
+    return file;
+  };
+}
+
+async function validateRecordingMedia(sourceRoot, html) {
+  const configs = [...html.matchAll(/(<script\b[^>]*>)([\s\S]*?)<\/script>/gi)]
+    .filter(match => attributeValue(match[1], 'id') === 'recording-media');
+  const players = [...html.matchAll(/<script\b[^>]*>[\s\S]*?<\/script>/gi)]
+    .filter(match => /\sdata-recording-player(?=\s|=|>)/i.test(match[0]));
+  // A lake player is optional. When present, validate its deployable assets
+  // without fetching, embedding, or selecting them in the weather startup.
+  if (!configs.length && !players.length) return;
+  if (configs.length !== 1 || attributeValue(configs[0][1], 'type') !== 'application/json') {
+    throw new Error('Expected exactly one recording-media JSON configuration');
+  }
+  const config = JSON.parse(configs[0][2]);
+  const keys = ['src', 'mobileSrc', 'poster', 'preview'];
+  if (!config || Array.isArray(config) || keys.some(key => typeof config[key] !== 'string')
+    || Object.keys(config).some(key => !keys.includes(key))) {
+    throw new Error('Incomplete recording media manifest');
+  }
+  const verifiedLocal = await localAssetVerifier(sourceRoot);
+  const files = await Promise.all(keys.map(key => verifiedLocal(config[key])));
+  if ((await stat(files[3])).size > 100000) throw new Error('Recording preview is unexpectedly large');
+  if (players.length !== 1 || !/^<script\b[^>]*>\s*<\/script>$/i.test(players[0][0])
+    || !/^\.\/recording\.js(?:\?[^#]*)?$/.test(attributeValue(players[0][0], 'src') || '')) {
+    throw new Error('Expected exactly one local recording.js player script');
+  }
+  const playerPath = path.join(sourceRoot, 'recording.js');
+  if (await realpath(playerPath) !== path.join(await realpath(sourceRoot), 'recording.js')) {
+    throw new Error('Recording player cannot traverse a symbolic link');
+  }
+  if (!(await stat(playerPath)).isFile()) throw new Error('Recording player must be a file');
 }
 
 export async function build({ snapshotPath, output, sourceRoot = sourceDirectory, now = Date.now() } = {}) {
@@ -238,10 +270,11 @@ export async function build({ snapshotPath, output, sourceRoot = sourceDirectory
   if (!weatherTag.test(html)) throw new Error('Missing external weather.js script');
   const styleTag = /<link\b(?=[^>]*\brel="stylesheet")(?=[^>]*\bhref="\.\/style\.css(?:\?[^\"]*)?")[^>]*>/g;
   if ((html.match(styleTag) || []).length !== 1) throw new Error('Expected exactly one external style.css stylesheet');
+  await validateRecordingMedia(root, html);
   const media = snapshot ? await initialMedia(root, html, skySource, snapshot.scene) : null;
   const mediaDescriptor = media ? { scene: media.scene, src: media.src, webmSrc: media.webmSrc, rate: media.rate } : null;
-  const initial = snapshot
-    ? `<script id="initial-weather" type="application/json">${jsonForHTML(snapshot)}</script>\n    <script id="initial-media" type="application/json">${jsonForHTML(mediaDescriptor)}</script>\n    ` : '';
+  let initial = snapshot ? `<script id="initial-weather" type="application/json">${jsonForHTML(snapshot)}</script>\n    ` : '';
+  if (mediaDescriptor) initial += `<script id="initial-media" type="application/json">${jsonForHTML(mediaDescriptor)}</script>\n    `;
   let rendered = media ? renderInitialScene(html, media) : html;
   rendered = rendered.replace(weatherTag, () => `${initial}<script data-weather-startup>\n${inlineJavaScript(weatherSource)}\n</script>`);
   rendered = rendered.replace(styleTag, () => `<style data-site-style>\n${inlineCSS(styleSource)}\n</style>`);
@@ -265,6 +298,9 @@ export async function build({ snapshotPath, output, sourceRoot = sourceDirectory
   }
   for (const item of await readdir(root, { withFileTypes: true })) {
     if (!item.isFile() || item.name === 'index.html' || (item.name.startsWith('.') && item.name !== '.nojekyll')) continue;
+    // The weather comparison gallery is a localhost review tool. The separate
+    // preview-player page remains public because social video embeds use it.
+    if (item.name === 'preview.html' || item.name === 'preview.js') continue;
     if (/\.(?:html|css|js|svg|ico|png|jpe?g|webp|gif|avif)$/i.test(item.name) || ['CNAME', '.nojekyll', 'robots.txt', 'sitemap.xml'].includes(item.name)) await copy(item.name);
   }
   for (const directory of ['assets', 'vendor', 'licenses']) {

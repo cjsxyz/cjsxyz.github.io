@@ -1,5 +1,6 @@
 (async () => {
   const root = document.documentElement;
+  const weatherActive = () => root.dataset.background !== 'recording';
   const sky = document.querySelector('.sky');
   const status = document.querySelector('#scene-status');
   const reducedMotion = window.matchMedia('(prefers-reduced-motion: reduce)');
@@ -88,7 +89,7 @@
   function applyPlaybackPreference() {
     for (const [key, scene] of Object.entries(scenes)) {
       const video = scene.video;
-      if (hasWeatherScene && weather.isFresh(current) && key === selected && wantsToPlay && !document.hidden && !scene.failed) {
+      if (weatherActive() && hasWeatherScene && weather.isFresh(current) && key === selected && wantsToPlay && !document.hidden && !scene.failed) {
         video.hidden = video.readyState < 2 && video.dataset.startupReady !== 'true';
         if (!video.getAttribute('src') || scene.needsFallback) {
           video.hidden = true;
@@ -100,7 +101,7 @@
       } else {
         video.pause();
         if (!video.getAttribute('src') || scene.failed) video.hidden = true;
-        if (hasWeatherScene && key === selected && video.hidden && (!wantsToPlay || scene.failed)) {
+        if (weatherActive() && hasWeatherScene && key === selected && video.hidden && (!wantsToPlay || scene.failed)) {
           loadPoster(scene, { fullQuality: true });
         }
       }
@@ -122,7 +123,7 @@
     const scene = scenes[key];
     const version = ++selectionVersion;
     scene.reveal = () => {
-      if (selected !== key || version !== selectionVersion) return;
+      if (!weatherActive() || selected !== key || version !== selectionVersion) return;
       const videoReady = !scene.failed && !scene.video.hidden && scene.video.readyState >= 2;
       const mediaFailed = scene.posterFailed && (scene.failed || !wantsToPlay);
       if (!scene.posterReady && !videoReady && !mediaFailed) return;
@@ -160,13 +161,13 @@
     if (!current || !weather.isFresh(current)) return false;
     clearTimeout(expiryTimer);
     expiryTimer = setTimeout(() => {
-      applyPlaybackPreference();
+      if (weatherActive()) applyPlaybackPreference();
       showWeather();
-      status.textContent = 'Checking current weather. The previous sky is paused.';
+      if (weatherActive()) status.textContent = 'Checking current weather. The previous sky is paused.';
       refreshWeather({ force: true });
     }, Math.max(1, current.time * 1000 + weather.maxWeatherAge - Date.now()));
     hasWeatherScene = true;
-    selectScene(weather.pickScene(current), { instant });
+    if (weatherActive()) selectScene(weather.pickScene(current), { instant });
     return true;
   }
 
@@ -200,13 +201,15 @@
       weatherFailed = true;
       // Keep a published still during an outage without treating its expired
       // snapshot as current weather or starting a potentially stale video.
-      if (!hasWeatherScene && scenes[selected].poster.hasAttribute('data-initial-poster')) {
-        status.textContent = 'Weather unavailable. Showing the last published sky.';
-      } else if (!hasWeatherScene) {
-        hasWeatherScene = true;
-        selectScene('cloudy', { instant: true });
-      } else applyPlaybackPreference();
-      if (!weather.isFresh(current)) status.textContent = 'Weather unavailable. Showing the last sky as a still.';
+      if (weatherActive()) {
+        if (!hasWeatherScene && scenes[selected].poster.hasAttribute('data-initial-poster')) {
+          status.textContent = 'Weather unavailable. Showing the last published sky.';
+        } else if (!hasWeatherScene) {
+          hasWeatherScene = true;
+          selectScene('cloudy', { instant: true });
+        } else applyPlaybackPreference();
+        if (!weather.isFresh(current)) status.textContent = 'Weather unavailable. Showing the last sky as a still.';
+      }
     } finally {
       clearTimeout(timeout);
       pending = false;
@@ -262,10 +265,11 @@
       updateState();
     });
     video.addEventListener('play', () => {
-      if (key !== selected || !wantsToPlay || document.hidden) video.pause();
+      if (!weatherActive() || key !== selected || !wantsToPlay || document.hidden || !weather.isFresh(current)) video.pause();
       updateState();
     });
     const showVideoFrame = () => {
+      if (!weatherActive()) { video.pause(); return; }
       if (video.readyState < 2 || scene.failed) return;
       video.hidden = false;
       scene.reveal?.();
@@ -289,9 +293,9 @@
       scene.failed = true;
       video.hidden = true;
       video.pause();
-      if (key === selected) loadPoster(scene, { fullQuality: true });
+      if (weatherActive() && key === selected) loadPoster(scene, { fullQuality: true });
       scene.reveal?.();
-      if (key === selected) status.textContent = `${scene.title} sky. Showing a still image because the video is unavailable.`;
+      if (weatherActive() && key === selected) status.textContent = `${scene.title} sky. Showing a still image because the video is unavailable.`;
       updateState();
     };
     video.addEventListener('error', scene.handleVideoError);
@@ -310,7 +314,7 @@
       scene.failed = false;
       scene.restoreTime = video.currentTime;
       scene.needsFallback = true;
-      if (key !== selected) continue;
+      if (!weatherActive() || key !== selected) continue;
       // Source replacement pauses the element. Resume only if it was moving;
       // metadata restores its position before playback continues.
       const wasPlaying = !video.paused;
@@ -323,7 +327,23 @@
     updateState();
   });
 
+  // The recording is an explicit, temporary view. Weather keeps refreshing
+  // while it plays, then the Cloud button selects the newest condition.
+  window.addEventListener('background-change', () => {
+    selectionVersion++;
+    if (!weatherActive()) {
+      applyPlaybackPreference();
+      return;
+    }
+    if (!useCurrentWeather()) {
+      applyPlaybackPreference();
+      refreshWeather({ force: true });
+    }
+    showWeather();
+  });
+
   document.addEventListener('keydown', event => {
+    if (!weatherActive()) return;
     if (event.repeat || event.altKey || event.ctrlKey || event.metaKey) return;
     if (event.code === 'Escape') wantsToPlay = false;
     else if (event.code === 'Space' && !event.target.closest('button, input, select, textarea, a, [contenteditable="true"], .bio-summary')) wantsToPlay = !wantsToPlay;
@@ -357,7 +377,7 @@
   clearPreviewURL();
   // The published still is already visible before this controller loads.
   // Only fresh weather starts playback; live data replaces an expired snapshot.
-  if (!useCurrentWeather({ instant: true })) {
+  if (!useCurrentWeather({ instant: true }) && weatherActive()) {
     sky.setAttribute('aria-label', 'Sky background while checking current weather');
     status.textContent = 'Checking current weather.';
   }

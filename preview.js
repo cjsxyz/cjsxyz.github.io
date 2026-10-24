@@ -107,6 +107,10 @@
     const doc = new DOMParser().parseFromString(html, 'text/html');
     const base = doc.createElement('base'); base.href = baseURL;
     doc.head.prepend(base);
+    // The lake is an on-demand view. Weather gallery documents
+    // retain only their selected weather layer and its existing dock.
+    delete doc.documentElement.dataset.background;
+    doc.querySelectorAll('.scene-recording, #recording-status, #recording-media').forEach(node => node.remove());
     doc.documentElement.dataset.scene = scene.id;
     doc.documentElement.dataset.instantSwitch = 'true';
     doc.title = `${scene.title} — simulated preview`;

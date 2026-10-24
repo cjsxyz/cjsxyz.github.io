@@ -34,9 +34,9 @@ class Element {
   closest(selector) { return selector === '.dock-item' && this.dataset.view ? this : this.parent?.closest(selector) || null; }
 }
 
-function setup({ clipboard = 'available', reduced = false } = {}) {
+function setup({ clipboard = 'available', reduced = false, player = 'available' } = {}) {
   let now = 0, timerId = 0, inClick = false;
-  const timers = new Map(), requests = [], sounds = [], unlocks = [];
+  const timers = new Map(), requests = [], sounds = [], unlocks = [], recordings = [];
   const doc = new Element(), win = new Element(), dock = new Element(), panel = new Element();
   const content = new Element(), media = new Element(), outside = new Element();
   media.matches = reduced; panel.appendChild(content); dock.appendChild(panel);
@@ -61,6 +61,10 @@ function setup({ clipboard = 'available', reduced = false } = {}) {
   doc.activeElement = outside;
   win.matchMedia = () => media;
   win.DockSounds = { play: cue => sounds.push(cue), unlock() { unlocks.push({ inClick }); return Promise.resolve(true); } };
+  if (player !== 'missing') win.RecordingPlayer = { select(view) {
+    if (player === 'throws') throw new Error('Player unavailable');
+    recordings.push({ view, inClick, panelOpen: dock.dataset.panelOpen === 'true' });
+  } };
   const navigator = {};
   if (clipboard !== 'missing') navigator.clipboard = {
     writeText(value) {
@@ -75,10 +79,11 @@ function setup({ clipboard = 'available', reduced = false } = {}) {
   });
   vm.runInContext(source, context, { filename: 'dock.js' });
   return {
-    dock, panel, content, nodes, items, requests, sounds, unlocks, doc, win, outside,
+    dock, panel, content, nodes, items, requests, sounds, unlocks, recordings, doc, win, outside,
     open: () => dock.dataset.panelOpen === 'true',
     visibleCopy: () => dock.dataset.panelOpen === 'true' && Object.values(nodes).some(node => !node.hidden && node.textContent === 'Copied!'),
     click(view, detail = 1) { inClick = true; try { return items[view].emit('click', { detail }); } finally { inClick = false; } },
+    clickHomestead(detail = 1) { inClick = true; try { return nodes['#homestead-link'].emit('click', { detail }); } finally { inClick = false; } },
     async success(index = requests.length - 1) { requests[index].resolve(); await flush(); },
     async failure(index = requests.length - 1) { requests[index].reject(new Error('Clipboard permission denied')); await flush(); },
     outsideClick() { doc.emit('pointerdown', { target: outside }); },
@@ -103,6 +108,60 @@ async function test(name, body) {
 }
 
 (async () => {
+  await test('the three-icon dock keeps exact biography copy and an accessible homestead action', async () => {
+    assert.deepEqual([...markup.matchAll(/class="dock-item"[^>]*data-view="([^"]+)"/g)].map(match => match[1]), ['cloud', 'user', 'mail']);
+    const bioCopy = /id="bio-summary"[^>]*>([\s\S]*?)<\/div>/.exec(markup)[1];
+    const paragraphs = [...bioCopy.matchAll(/<p>([\s\S]*?)<\/p>/g)].map(match => match[1].replace(/<[^>]+>/g, ''));
+    assert.deepEqual(paragraphs, ['Conversations and vibes at Paradigm.', 'Building a homestead in the Napa mountains.']);
+    assert.match(bioCopy, /Conversations and vibes at <strong><a href="https:\/\/www\.paradigm\.xyz\/"[^>]*>Paradigm<\/a><\/strong>\./);
+    assert.match(bioCopy, /<button id="homestead-link" class="bio-action" type="button" aria-label="Play the homestead lake video">homestead<\/button>/);
+  });
+  await test('opening User leaves weather alone and the homestead action starts the lake inside its click', async () => {
+    const x = setup(); x.click('user');
+    assert.deepEqual(x.recordings, []);
+    assert.equal(x.nodes['#bio-summary'].hidden, false); assert.equal(x.nodes['#weather-summary'].hidden, true);
+    assert.equal(x.panel.getAttribute('aria-label'), 'About Chris');
+    assert.equal(x.items.user.getAttribute('aria-expanded'), 'true');
+    x.clickHomestead();
+    assert.deepEqual(x.recordings, [{ view: 'lake', inClick: true, panelOpen: true }]);
+    assert.equal(x.open(), true, 'playing the lake keeps its biography available');
+    assert.equal(x.dock.dataset.selection, 'user');
+    x.click('user'); assert.equal(x.open(), false);
+    assert.deepEqual(x.recordings.map(item => item.view), ['lake'], 'closing User does not change the lake');
+    assert.deepEqual(x.sounds, ['select', 'select', 'close']);
+  });
+  await test('every Weather click requests current weather, including closing its drawer', async () => {
+    const x = setup(); x.click('user'); x.clickHomestead(); x.click('cloud');
+    assert.deepEqual(x.recordings.map(item => item.view), ['lake', 'weather']);
+    assert.equal(x.recordings[1].inClick, true);
+    assert.equal(x.nodes['#bio-summary'].hidden, true); assert.equal(x.nodes['#weather-summary'].hidden, false);
+    assert.equal(x.items.user.getAttribute('aria-expanded'), 'false');
+    x.click('cloud'); assert.equal(x.open(), false);
+    assert.deepEqual(x.recordings.map(item => item.view), ['lake', 'weather', 'weather']);
+  });
+  await test('User, Email, and outside dismissal do not replace the lake video', async () => {
+    const x = setup(); x.click('user'); x.clickHomestead(); x.outsideClick();
+    x.click('user'); x.click('user'); x.click('mail'); await x.success(); await x.tick(500);
+    assert.deepEqual(x.recordings.map(item => item.view), ['lake']);
+  });
+  await test('the biography and Weather remain usable if the recording player is absent or throws', async () => {
+    for (const player of ['missing', 'throws']) {
+      const x = setup({ player }); x.click('user'); assert.doesNotThrow(() => x.clickHomestead());
+      assert.equal(x.open(), true); assert.equal(x.nodes['#bio-summary'].hidden, false);
+      assert.doesNotThrow(() => x.click('cloud')); assert.equal(x.nodes['#weather-summary'].hidden, false);
+    }
+  });
+  await test('keyboard navigation wraps three icons and Escape from homestead returns focus to User', async () => {
+    const x = setup(); x.items.cloud.focus();
+    x.dock.emit('keydown', { key: 'ArrowRight', target: x.items.cloud }); assert.equal(x.doc.activeElement, x.items.user);
+    x.dock.emit('keydown', { key: 'ArrowLeft', target: x.items.cloud }); assert.equal(x.doc.activeElement, x.items.mail);
+    x.dock.emit('keydown', { key: 'Home', target: x.items.mail }); assert.equal(x.doc.activeElement, x.items.cloud);
+    x.dock.emit('keydown', { key: 'End', target: x.items.cloud }); assert.equal(x.doc.activeElement, x.items.mail);
+    x.click('user', 0); x.clickHomestead(0); x.doc.activeElement = x.nodes['#homestead-link'];
+    const event = x.escape(); assert.equal(x.open(), false); assert.equal(x.doc.activeElement, x.items.user);
+    assert.equal(event.defaultPrevented, true); assert.equal(event.propagationStopped, true);
+    assert.deepEqual(x.recordings, [{ view: 'lake', inClick: true, panelOpen: true }]);
+  });
   await test('Email is a disclosure button, with no native mailto navigation', async () => {
     const mail = /<([a-z]+)\b[^>]*data-view="mail"[^>]*>/.exec(markup);
     assert.equal(mail[1], 'button'); assert.match(mail[0], /type="button"/);

@@ -517,7 +517,10 @@ async function buildFixture(t) {
     'startup.js': 'globalThis.fixtureStartupLoaded = true;\n',
     'sky.js': `const scenes = {\n${sceneCases.map(([scene]) => `    '${scene}': { title: '${scene}', src: './assets/${scene}.mp4?v=1', webmSrc: './assets/${scene}.webm?v=1', rate: 0.75 },`).join('\n')}\n};\n`,
     'style.css': `body { margin: 0; }\n/* Literal replacement characters: $& $' */\n.scene-layer { opacity: 0; }\n${sceneCases.map(([scene]) => `:root[data-scene="${scene}"] .scene-${scene} { opacity: 1; }`).join('\n')}\n:root[data-instant-switch="true"] .scene-layer { transition: none; }`,
-    'preview.html': '<title>Preview</title>',
+    'preview.html': '<title>Local weather gallery</title>',
+    'preview.js': 'globalThis.localWeatherGallery = true;',
+    'preview-player.html': '<title>Social video preview</title>',
+    'preview-player.js': 'globalThis.socialVideoPreview = true;',
     'favicon.svg': '<svg/>',
     'og.png': 'social-preview',
     'CNAME': 'chrisshu.com\n',
@@ -552,6 +555,24 @@ async function buildFixture(t) {
   }
   await writeFile(snapshotPath, JSON.stringify(snapshot()));
   return { directory, sourceRoot, output, snapshotPath, files };
+}
+
+async function recordingFixture(t) {
+  const fixture = await buildFixture(t);
+  const config = { src: './assets/recording-v137.mp4', mobileSrc: './assets/recording-mobile-v137.mp4',
+    poster: './assets/recording-poster-v137.webp', preview: './assets/recording-preview-v137.webp' };
+  const recording = `<div class="scene-layer scene-recording" data-scene="recording" aria-hidden="true"><img class="scene-poster" data-src="${config.poster}" data-preview="${config.preview}" alt=""><video hidden></video></div>
+      <script type="application/json" id="recording-media">${JSON.stringify(config)}</script>
+      <script src="./recording.js?v=137" data-recording-player></script>`;
+  fixture.files['index.html'] = fixture.files['index.html']
+    .replace('<html>', '<html data-background="weather">')
+    .replace('<!-- WEATHER_STARTUP -->', `${recording}\n<!-- WEATHER_STARTUP -->`);
+  fixture.files['recording.js'] = 'globalThis.fixtureRecordingLoaded = true; // </script> stays in the player\n';
+  for (const [key, url] of Object.entries(config)) fixture.files[url.slice(2)] = `fixture-recording:${key}`;
+  for (const relative of ['index.html', 'recording.js', ...Object.values(config).map(url => url.slice(2))]) {
+    await writeFile(path.join(fixture.sourceRoot, relative), fixture.files[relative]);
+  }
+  return { ...fixture, config };
 }
 
 function embeddedJSON(html, id) {
@@ -655,6 +676,107 @@ test('build omits stale or invalid inline weather while keeping the live startup
   }
 });
 
+test('weather startup stays selected while the optional lake recording remains unrequested', async t => {
+  const fixture = await recordingFixture(t);
+  for (const candidate of [null, {}, { ...snapshot(), validUntil: noon }, snapshot(), snapshot(noon, { weather_code: 61 })]) {
+    await writeFile(fixture.snapshotPath, JSON.stringify(candidate));
+    const result = await build({ ...fixture, now: noon });
+    const html = await readFile(path.join(fixture.output, 'index.html'), 'utf8');
+    const expectedWeather = validateSnapshot(candidate, noon);
+    assert.equal(result.snapshot?.scene ?? null, expectedWeather?.scene ?? null);
+    assert.deepEqual(embeddedJSON(html, 'initial-weather'), expectedWeather ?? undefined);
+    assert.deepEqual(embeddedJSON(html, 'recording-media'), fixture.config);
+    assert.equal(embeddedJSON(html, 'initial-media')?.scene, expectedWeather?.scene);
+    const root = attributes(/<html\b[^>]*>/.exec(html)[0]);
+    assert.equal(root['data-background'], 'weather');
+    assert.equal(root['data-scene'], expectedWeather?.scene);
+    const lake = sceneMarkup(html, 'recording');
+    assert.equal(lake.layer['aria-hidden'], 'true');
+    assert.ok(!Object.hasOwn(lake.poster, 'src'), 'the lake poster must not be requested before selection');
+    assert.ok(!Object.hasOwn(lake.poster, 'data-initial-poster'));
+    assert.equal((html.match(/data:image\/webp;base64,/g) || []).length, expectedWeather ? 1 : 0);
+    for (const [scene] of sceneCases) {
+      const weatherMarkup = sceneMarkup(html, scene);
+      assert.equal(weatherMarkup.layer['aria-hidden'], scene === expectedWeather?.scene ? 'false' : 'true');
+      if (scene === expectedWeather?.scene) {
+        assert.equal(weatherMarkup.poster.src, `data:image/webp;base64,${Buffer.from(`fixture-poster:${scene}`).toString('base64')}`);
+      } else assert.ok(!Object.hasOwn(weatherMarkup.poster, 'src'), `no request for inactive ${scene} poster`);
+    }
+    assert.match(html, /<script src="\.\/recording\.js\?v=137" data-recording-player><\/script>/);
+    assert.match(html, /<script data-initial-scene>[\s\S]*?fixtureStartupLoaded/);
+    assert.doesNotMatch(html, /fixtureRecordingLoaded|\s(?:src|href|poster)="\.\/assets\/recording|<!-- WEATHER_STARTUP -->/);
+    assert.ok(html.indexOf('fixtureWeatherLoaded') < html.indexOf('fixtureStartupLoaded'));
+    assertInlineStyles(html, fixture.files['style.css']);
+    assert.equal(await readFile(path.join(fixture.output, 'recording.js'), 'utf8'), fixture.files['recording.js']);
+    for (const [key, url] of Object.entries(fixture.config)) {
+      assert.equal(await readFile(path.join(fixture.output, url), 'utf8'), `fixture-recording:${key}`);
+    }
+  }
+});
+
+test('optional lake media paths and preview size are validated even without a weather snapshot', async t => {
+  const fixture = await recordingFixture(t);
+  await writeFile(fixture.snapshotPath, 'null');
+  await build({ ...fixture, now: noon });
+  const previous = await readFile(path.join(fixture.output, 'index.html'), 'utf8');
+  for (const key of ['src', 'mobileSrc', 'poster', 'preview']) {
+    for (const value of ['./assets/../../secret.webp', 'https://example.test/secret.webp', '//example.test/secret.webp', null]) {
+      const invalid = { ...fixture.config, [key]: value };
+      await writeFile(path.join(fixture.sourceRoot, 'index.html'),
+        fixture.files['index.html'].replace(JSON.stringify(fixture.config), JSON.stringify(invalid)));
+      await assert.rejects(build({ ...fixture, now: noon }), /local assets|escapes assets|Incomplete recording/);
+      assert.equal(await readFile(path.join(fixture.output, 'index.html'), 'utf8'), previous);
+    }
+  }
+  await writeFile(path.join(fixture.sourceRoot, 'index.html'), fixture.files['index.html']);
+  await writeFile(path.join(fixture.sourceRoot, fixture.config.preview), Buffer.alloc(100001));
+  await assert.rejects(build({ ...fixture, now: noon }), /preview is unexpectedly large/);
+  assert.equal(await readFile(path.join(fixture.output, 'index.html'), 'utf8'), previous);
+});
+
+test('optional lake player rejects linked assets and incomplete configuration or player markup', async t => {
+  const fixture = await recordingFixture(t);
+  const secret = path.join(fixture.directory, 'outside.txt');
+  await writeFile(secret, 'DO_NOT_PUBLISH');
+  for (const url of [...Object.values(fixture.config), './recording.js']) {
+    const relative = url.slice(2), target = path.join(fixture.sourceRoot, relative);
+    await rm(target);
+    await symlink(secret, target);
+    await assert.rejects(build({ ...fixture, now: noon }), /symbolic link/);
+    await rm(target);
+    await writeFile(target, fixture.files[relative]);
+  }
+  const original = fixture.files['index.html'];
+  const configTag = /<script type="application\/json" id="recording-media">[\s\S]*?<\/script>/.exec(original)[0];
+  const playerTag = '<script src="./recording.js?v=137" data-recording-player></script>';
+  for (const html of [
+    original.replace(configTag, ''), original.replace(configTag, configTag + configTag),
+    original.replace('type="application/json" id="recording-media"', 'type="text/javascript" id="recording-media"'),
+    original.replace(JSON.stringify(fixture.config), '{invalid json}'),
+    original.replace(playerTag, ''), original.replace(playerTag, playerTag + playerTag),
+    original.replace('./recording.js?v=137', 'https://example.test/recording.js'),
+    original.replace(JSON.stringify(fixture.config), JSON.stringify({ ...fixture.config, unexpected: {} })),
+    original.replace(playerTag, playerTag.replace('</script>', 'unexpectedInlinePlayer()</script>')),
+  ]) {
+    await writeFile(path.join(fixture.sourceRoot, 'index.html'), html);
+    await assert.rejects(build({ ...fixture, now: noon }));
+  }
+});
+
+test('a missing optional lake asset cannot replace the last valid weather build', async t => {
+  const fixture = await recordingFixture(t);
+  await build({ ...fixture, now: noon });
+  const previous = await readFile(path.join(fixture.output, 'index.html'), 'utf8');
+  for (const url of [...Object.values(fixture.config), './recording.js']) {
+    const target = path.join(fixture.sourceRoot, url);
+    const content = await readFile(target);
+    await rm(target);
+    await assert.rejects(build({ ...fixture, now: noon }), /ENOENT/);
+    assert.equal(await readFile(path.join(fixture.output, 'index.html'), 'utf8'), previous);
+    await writeFile(target, content);
+  }
+});
+
 test('build safely handles closing-style text without allowing HTML to escape the inline CSS', async t => {
   const fixture = await buildFixture(t);
   await build({ ...fixture, now: noon });
@@ -713,12 +835,12 @@ test('build copies only deployable files and reports actual output size', async 
   const result = await build({ ...fixture, now: noon });
   const files = await fileList(fixture.output);
   for (const relative of ['CNAME', '.nojekyll', 'robots.txt', 'sitemap.xml', 'style.css',
-    'preview.html', 'favicon.svg', 'og.png', 'assets/nested/extra.txt', 'vendor/package/index.js', 'licenses/vendor.txt']) {
+    'preview-player.html', 'preview-player.js', 'favicon.svg', 'og.png', 'assets/nested/extra.txt', 'vendor/package/index.js', 'licenses/vendor.txt']) {
     assert.ok(files.includes(relative), relative);
   }
   for (const relative of ['README.md', 'package.json', '.env', '.private.js', 'scripts/private.js',
     'tests/private.js', '.git/config', '.github/workflows/private.yml', 'hosting/private.conf',
-    'edge/private.js', 'assets/.secret.txt', 'assets/linked-secret.txt']) {
+    'edge/private.js', 'assets/.secret.txt', 'assets/linked-secret.txt', 'preview.html', 'preview.js']) {
     assert.ok(!files.includes(relative), `must exclude ${relative}`);
   }
   const sizes = await Promise.all(files.map(async relative => {
