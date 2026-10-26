@@ -28,8 +28,14 @@ body {
 }
 
 .sky {
+  --frame-gap: clamp(12.996px, 2.11185vw, 32.49px);
+  --frame-bottom-gap: var(--frame-gap);
   position: fixed;
-  inset: clamp(12.996px, 2.11185vw, 32.49px);
+  /* Keep the frame inside the visible safe area as browser bars move. */
+  top: calc(env(safe-area-inset-top, 0px) + var(--frame-gap));
+  right: calc(env(safe-area-inset-right, 0px) + var(--frame-gap));
+  bottom: calc(env(safe-area-inset-bottom, 0px) + var(--frame-bottom-gap));
+  left: calc(env(safe-area-inset-left, 0px) + var(--frame-gap));
   z-index: 2;
   overflow: hidden;
   border: 0;
@@ -37,6 +43,11 @@ body {
   box-shadow: none;
   isolation: isolate;
   background: #739fbe;
+}
+
+@media (hover: none) and (pointer: coarse) {
+  /* Rounded phone corners need a little clearance even with a zero inset. */
+  .sky { --frame-bottom-gap: max(var(--frame-gap), 24px); }
 }
 
 .scene-layer {
