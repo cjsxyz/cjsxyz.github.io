@@ -320,7 +320,7 @@ test('provider fetch requests Fahrenheit and solar times with an abort signal', 
   assert.equal(calls.length, 1);
   assert.equal(calls[0].url.hostname, 'api.open-meteo.com');
   assert.equal(calls[0].url.searchParams.get('temperature_unit'), 'fahrenheit');
-  assert.equal(calls[0].url.searchParams.get('models'), 'ncep_nbm_conus');
+  assert.equal(calls[0].url.searchParams.get('models'), 'ncep_hrrr_conus');
   assert.equal(calls[0].url.searchParams.get('cell_selection'), 'nearest');
   assert.equal(calls[0].url.searchParams.get('latitude'), '37.789');
   assert.equal(calls[0].url.searchParams.get('longitude'), '-122.396');

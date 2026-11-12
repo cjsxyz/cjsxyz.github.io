@@ -211,7 +211,7 @@ async function test(name, body) {
   catch (error) { failures.push({ name, error: error.stack }); console.error(`FAIL ${name}\n${error.stack}`); }
 }
 const cached = (changes, at = START) => ({ current: { time: Math.floor(at / 1000), weather_code: 2, is_day: 1,
-  temperature_2m: 60, cloud_cover: 62, direct_normal_irradiance_instant: 600, ...changes }, fetchedAt: at, weatherPolicy: 'east-cut-nbm-nearest-v1' });
+  temperature_2m: 60, cloud_cover: 62, direct_normal_irradiance_instant: 600, ...changes }, fetchedAt: at, weatherPolicy: 'east-cut-hrrr-nearest-v2' });
 
 (async () => {
   await test('HTML starts async weather early and keeps weather scene media deferred', async () => {
@@ -401,6 +401,18 @@ const cached = (changes, at = START) => ({ current: { time: Math.floor(at / 1000
       assert.equal(x.root.dataset.scene, 'fog'); assert.deepEqual(x.hydrated(), ['fog']);
     }
   });
+  await test('fresh NBM cache cannot start the blue video after switching to HRRR', async () => {
+    const cache = { ...cached({ cloud_cover: 54, direct_normal_irradiance_instant: 441 }),
+      weatherPolicy: 'east-cut-nbm-nearest-v1' };
+    const x = setup({ cache }); await flush();
+    assert.deepEqual(x.hydrated(), []);
+    assert.deepEqual(x.loaded(), []);
+    assert.equal(new URL(x.requests[0].url).searchParams.get('models'), 'ncep_hrrr_conus');
+    await x.resolve(0, { weather_code: 3, cloud_cover: 94, direct_normal_irradiance_instant: 114.9 });
+    assert.equal(x.root.dataset.scene, 'overcast');
+    assert.deepEqual(x.loaded(), ['overcast']);
+    assert.deepEqual(x.playing(), ['overcast']);
+  });
   await test('five-minute refresh starts from successful completion and never overlaps pending requests', async () => {
     const x = setup(); await x.tick(7500); await x.resolve(0);
     await x.tick(299999); assert.equal(x.requests.length, 1); await x.tick(1); assert.equal(x.requests.length, 2);
@@ -515,7 +527,7 @@ const cached = (changes, at = START) => ({ current: { time: Math.floor(at / 1000
     for (const changes of [
       { validUntil: START }, { fetchedAt: START - 2700001 }, { fetchedAt: START + 60001 },
       { validUntil: START + 1800001 }, { scene: 'sunny' }, { current: 'bad' }, { version: 2 },
-      { weatherPolicy: undefined }, { weatherPolicy: 'old-central-sf-hrrr' },
+      { weatherPolicy: undefined }, { weatherPolicy: 'old-central-sf-hrrr' }, { weatherPolicy: 'east-cut-nbm-nearest-v1' },
     ]) {
       const x = setup({ boot: 'snapshot', initial: { ...initial, ...changes } }); await flush();
       assert.deepEqual(x.loaded(), []);

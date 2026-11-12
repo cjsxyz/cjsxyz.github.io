@@ -3,17 +3,16 @@
   const host = typeof window === 'undefined' ? globalThis : window;
   const page = typeof document === 'undefined' ? null : document;
 
-  // East Cut / Financial District. Use NOAA's calibrated National Blend of
-  // Models explicitly: automatic selection previously chose a western HRRR
-  // grid with a gray sky while local conditions and NWS indicated sunshine.
+  // East Cut / Financial District. Pin NOAA HRRR to the nearest grid cell;
+  // do not silently change neighborhoods or models when providers disagree.
   // These are current-time model estimates, not station observations.
   // https://open-meteo.com/en/docs/gfs-api
-  const policyId = 'east-cut-nbm-nearest-v1';
+  const policyId = 'east-cut-hrrr-nearest-v2';
   const maxWeatherAge = 30 * 60 * 1000;
   const fields = ['temperature_2m', 'is_day', 'weather_code', 'cloud_cover', 'direct_normal_irradiance_instant'];
   const endpoint = 'https://api.open-meteo.com/v1/forecast?' + new URLSearchParams({
     latitude: '37.789', longitude: '-122.396', timezone: 'America/Los_Angeles',
-    models: 'ncep_nbm_conus', cell_selection: 'nearest',
+    models: 'ncep_hrrr_conus', cell_selection: 'nearest',
     timeformat: 'unixtime', temperature_unit: 'fahrenheit', current: fields.join(','),
   });
   const refreshMs = 5 * 60 * 1000;
@@ -106,7 +105,8 @@
   const rainCodes = new Set([51, 53, 55, 56, 57, 61, 63, 65, 66, 67, 80, 81, 82, 95, 96, 97, 99]);
   // Direct normal irradiance measures the sun-facing beam, avoiding the extra
   // low-sun-angle dimming of a horizontal measurement. Open-Meteo defines
-  // sunshine as exceeding 120 W/m²; we use that as a daytime visual cutoff.
+  // sunshine as exceeding 120 W/m²; use it to distinguish sunlit partial
+  // clouds, but never to override an explicit overcast condition.
   const directSunlightThreshold = 120;
   // Coverage is a nighttime / missing-sunlight fallback, not a rain diagnosis.
   const graySkyCloudCover = 60;
@@ -191,6 +191,9 @@
       // Darkness alone says nothing about cloud density. Preserve the three
       // night skies using cloud cover and the provider's condition code.
       if (night) return graySky ? 'overcast-night' : 'night';
+      // Some sunlight can pass through an overcast sky. A modeled sunbeam
+      // alone does not establish blue sky, including during sunset.
+      if (c.weather_code === 3) return 'overcast';
       const brightClouds = c.direct_normal_irradiance_instant !== null
         ? c.direct_normal_irradiance_instant > directSunlightThreshold : !graySky;
       // Sunlit clouds get a sunset variant during the final 30 daylight minutes.

@@ -81,7 +81,7 @@ test('both model and geographic policy are explicit, with five-minute refresh', 
   assert.equal(url.origin + url.pathname, 'https://api.open-meteo.com/v1/forecast');
   assert.equal(url.searchParams.get('latitude'), '37.789');
   assert.equal(url.searchParams.get('longitude'), '-122.396');
-  assert.equal(url.searchParams.get('models'), 'ncep_nbm_conus');
+  assert.equal(url.searchParams.get('models'), 'ncep_hrrr_conus');
   assert.equal(url.searchParams.get('cell_selection'), 'nearest');
   assert.equal(url.searchParams.get('timezone'), 'America/Los_Angeles');
   assert.equal(url.searchParams.get('timeformat'), 'unixtime');
@@ -89,7 +89,7 @@ test('both model and geographic policy are explicit, with five-minute refresh', 
   assert.deepEqual(new Set(url.searchParams.get('current').split(',')), new Set([
     'temperature_2m', 'is_day', 'weather_code', 'cloud_cover', 'direct_normal_irradiance_instant',
   ]));
-  assert.equal(x.weather.policyId, 'east-cut-nbm-nearest-v1');
+  assert.equal(x.weather.policyId, 'east-cut-hrrr-nearest-v2');
   assert.equal(x.weather.refreshMs, 5 * minute);
   assert.equal(x.weather.maxWeatherAge, 30 * minute);
   const controller = new AbortController();
@@ -118,7 +118,26 @@ test('clouds use direct sunlight, including the existing 120 W/m² boundary', ()
   }
   assert.equal(weather.pickScene({ ...clouds, direct_normal_irradiance_instant: null }), 'overcast');
   assert.equal(weather.pickScene({ ...clouds, cloud_cover: 35, direct_normal_irradiance_instant: null }), 'cloudy');
-  assert.equal(weather.pickScene({ ...clouds, weather_code: 3, direct_normal_irradiance_instant: 700 }), 'cloudy');
+  assert.equal(weather.pickScene({ ...clouds, weather_code: 3, direct_normal_irradiance_instant: 700 }), 'overcast');
+});
+
+test('November 12 HRRR overcast does not turn blue as sunlight crosses the cutoff', () => {
+  // Live nearest-cell HRRR response at 14:30 PST; NBM at the same time had
+  // code 2, 54% cloud and 441 W/m². Retain HRRR's own coherent reading.
+  const time = 1794522600;
+  const clock = time * 1000 + 2 * minute;
+  const { weather } = load({ clock });
+  const overcast = { time, is_day: 1, weather_code: 3, cloud_cover: 94,
+    direct_normal_irradiance_instant: 114.9, temperature_2m: 62.9 };
+  assert.equal(weather.isFresh(overcast), true);
+  for (const sunlight of [114.9, 120, 120.1, 441, null]) {
+    const reading = { ...overcast, direct_normal_irradiance_instant: sunlight };
+    assert.equal(weather.pickScene(reading), 'overcast');
+    assert.equal(weather.pickScene(reading, weather.solarPhase(clock).sunsetStart), 'overcast');
+    assert.equal(weather.pickScene(reading, weather.solarPhase(clock).sunset), 'overcast-night');
+  }
+  assert.equal(weather.pickScene({ ...overcast, weather_code: 2, cloud_cover: 69,
+    direct_normal_irradiance_instant: 315.5 }), 'cloudy', 'sunlit broken clouds remain bright');
 });
 
 test('night phases retain clear, cloudy and overcast skies independently of sunlight', () => {
@@ -187,7 +206,7 @@ test('initial weather requires this exact model/location policy and matching sce
   assert.equal(x.weather.readInitial().scene, 'sunny');
   for (const changes of [
     { weatherPolicy: undefined }, { weatherPolicy: 'sf-default-v1' },
-    { weatherPolicy: 'east-cut-hrrr-nearest-v1' }, { weatherPolicy: null },
+    { weatherPolicy: 'east-cut-hrrr-nearest-v1' }, { weatherPolicy: 'east-cut-nbm-nearest-v1' }, { weatherPolicy: null },
     { scene: 'overcast' }, { version: 2 },
   ]) {
     x.setInitial({ ...good, ...changes });
