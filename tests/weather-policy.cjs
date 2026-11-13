@@ -89,14 +89,14 @@ test('both model and geographic policy are explicit, with five-minute refresh', 
   assert.deepEqual(new Set(url.searchParams.get('current').split(',')), new Set([
     'temperature_2m', 'is_day', 'weather_code', 'cloud_cover', 'direct_normal_irradiance_instant',
   ]));
-  assert.equal(x.weather.policyId, 'east-cut-hrrr-nearest-v2');
+  assert.equal(x.weather.policyId, 'east-cut-hrrr-nws-v3');
   assert.equal(x.weather.refreshMs, 5 * minute);
   assert.equal(x.weather.maxWeatherAge, 30 * minute);
   const controller = new AbortController();
   const result = await x.weather.fetchCurrent({ signal: controller.signal });
   assert.equal(x.calls.length, 1);
   assert.equal(x.calls[0].url, x.weather.endpoint);
-  assert.equal(x.calls[0].options.signal, controller.signal);
+  assert.ok(x.calls[0].options.signal instanceof AbortSignal, 'bounded request has an abort signal');
   assert.equal(x.calls[0].options.cache, 'no-store');
   assert.equal(x.calls[0].options.credentials, 'omit');
   assert.equal(x.weather.pickScene(result), 'sunny');

@@ -26,6 +26,11 @@
   let solarTimer;
   let weatherFailed = false;
   let hasWeatherScene = false;
+  // Briefly retain a recent sky during an outage, without calling it current.
+  // Older readings give way to neutral, clock-correct day/night ambience.
+  const maxVisualAge = 60 * 60 * 1000;
+  const hasRecentVisual = () => current && current.time * 1000 <= Date.now() + 30000
+    && Date.now() - current.time * 1000 < maxVisualAge;
   const initialWeather = weather.readInitial();
   if (initialWeather) {
     current = initialWeather.current;
@@ -89,7 +94,7 @@
   function applyPlaybackPreference() {
     for (const [key, scene] of Object.entries(scenes)) {
       const video = scene.video;
-      if (weatherActive() && hasWeatherScene && weather.isFresh(current) && key === selected && wantsToPlay && !document.hidden && !scene.failed) {
+      if (weatherActive() && hasWeatherScene && key === selected && wantsToPlay && !document.hidden && !scene.failed) {
         video.hidden = video.readyState < 2 && video.dataset.startupReady !== 'true';
         if (!video.getAttribute('src') || scene.needsFallback) {
           video.hidden = true;
@@ -145,27 +150,47 @@
   }
 
   function showWeather() {
+    weatherSummary.dataset.forecast = String(current?.source === 'nws-hourly');
     if (current && weather.isFresh(current)) {
       weatherSummary.textContent = weather.summarize(current);
       const temperature = Number.isFinite(current.temperature_2m) ? `${Math.round(current.temperature_2m)}°F · ` : '';
       condition.textContent = `${temperature}${weather.describe(current)}`;
-      freshness.textContent = `${weatherFailed ? 'Last known' : 'As of'} ${sfTime.format(current.time * 1000)} PT`;
+      freshness.textContent = `${current.source === 'nws-hourly' ? 'Forecast for' : weatherFailed ? 'Last known' : 'As of'} ${sfTime.format(current.time * 1000)} PT`;
+    } else if (hasRecentVisual()) {
+      const time = sfTime.format(current.time * 1000);
+      weatherSummary.textContent = `Last known: ${weather.describe(current).toLowerCase()} · ${time} PT`;
+      condition.textContent = `Last known: ${weather.describe(current)}`;
+      freshness.textContent = `Last updated ${time} PT; refreshing`;
     } else {
-      weatherSummary.textContent = weatherFailed ? 'Weather unavailable in San Francisco' : 'Checking weather in San Francisco…';
-      condition.textContent = weatherFailed ? 'Weather unavailable' : 'Checking weather…';
-      freshness.textContent = weatherFailed ? 'Will retry automatically' : 'Current conditions';
+      weatherSummary.textContent = weatherFailed ? 'San Francisco skies' : 'Checking weather in San Francisco…';
+      condition.textContent = weatherFailed ? 'San Francisco skies' : 'Checking weather…';
+      freshness.textContent = 'Updating live weather';
     }
+  }
+
+  function useFallbackSky({ instant = false } = {}) {
+    clearTimeout(expiryTimer);
+    const recent = hasRecentVisual();
+    const key = recent ? weather.pickScene(current)
+      : weather.solarPhase().isDay ? 'overcast' : 'overcast-night';
+    hasWeatherScene = true;
+    if (weatherActive()) {
+      selectScene(key, { instant });
+      status.textContent = recent ? 'Last known sky. Updating live weather.' : 'Ambient sky. Updating live weather.';
+    }
+    if (recent) expiryTimer = setTimeout(() => {
+      useFallbackSky(); showWeather();
+    }, Math.max(1, current.time * 1000 + maxVisualAge - Date.now()));
   }
 
   function useCurrentWeather({ instant = false } = {}) {
     if (!current || !weather.isFresh(current)) return false;
     clearTimeout(expiryTimer);
     expiryTimer = setTimeout(() => {
-      if (weatherActive()) applyPlaybackPreference();
+      useFallbackSky();
       showWeather();
-      if (weatherActive()) status.textContent = 'Checking current weather. The previous sky is paused.';
       refreshWeather({ force: true });
-    }, Math.max(1, current.time * 1000 + weather.maxWeatherAge - Date.now()));
+    }, Math.max(1, weather.expiresAt(current) - Date.now()));
     hasWeatherScene = true;
     if (weatherActive()) selectScene(weather.pickScene(current), { instant });
     return true;
@@ -199,17 +224,7 @@
       useCurrentWeather({ instant: !hasWeatherScene });
     } catch {
       weatherFailed = true;
-      // Keep a published still during an outage without treating its expired
-      // snapshot as current weather or starting a potentially stale video.
-      if (weatherActive()) {
-        if (!hasWeatherScene && scenes[selected].poster.hasAttribute('data-initial-poster')) {
-          status.textContent = 'Weather unavailable. Showing the last published sky.';
-        } else if (!hasWeatherScene) {
-          hasWeatherScene = true;
-          selectScene('cloudy', { instant: true });
-        } else applyPlaybackPreference();
-        if (!weather.isFresh(current)) status.textContent = 'Weather unavailable. Showing the last sky as a still.';
-      }
+      if (!useCurrentWeather()) useFallbackSky({ instant: !hasWeatherScene });
     } finally {
       clearTimeout(timeout);
       pending = false;
@@ -232,7 +247,7 @@
     // Lighting follows San Francisco's clock even between weather requests.
     const boundary = weather.solarPhase().nextBoundary;
     solarTimer = setTimeout(() => {
-      useCurrentWeather();
+      if (!useCurrentWeather() && hasWeatherScene) useFallbackSky();
       showWeather();
       scheduleSolarTransition();
     }, Math.max(100, boundary - Date.now() + 25));
@@ -265,7 +280,7 @@
       updateState();
     });
     video.addEventListener('play', () => {
-      if (!weatherActive() || key !== selected || !wantsToPlay || document.hidden || !weather.isFresh(current)) video.pause();
+      if (!weatherActive() || key !== selected || !wantsToPlay || document.hidden) video.pause();
       updateState();
     });
     const showVideoFrame = () => {
@@ -336,7 +351,7 @@
       return;
     }
     if (!useCurrentWeather()) {
-      applyPlaybackPreference();
+      useFallbackSky();
       refreshWeather({ force: true });
     }
     showWeather();
@@ -357,7 +372,7 @@
       clearTimeout(refreshTimer);
       clearTimeout(solarTimer);
     } else {
-      useCurrentWeather();
+      if (!useCurrentWeather() && hasWeatherScene) useFallbackSky();
       showWeather();
       scheduleSolarTransition();
       refreshWeather();
@@ -370,7 +385,7 @@
   });
   window.addEventListener('popstate', () => {
     clearPreviewURL();
-    useCurrentWeather({ instant: true });
+    if (!useCurrentWeather({ instant: true }) && hasWeatherScene) useFallbackSky({ instant: true });
     showWeather();
     refreshWeather();
   });

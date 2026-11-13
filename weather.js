@@ -5,10 +5,13 @@
 
   // East Cut / Financial District. Pin NOAA HRRR to the nearest grid cell;
   // do not silently change neighborhoods or models when providers disagree.
+  // NWS is an independent, explicitly labeled fallback for service failures.
   // These are current-time model estimates, not station observations.
   // https://open-meteo.com/en/docs/gfs-api
-  const policyId = 'east-cut-hrrr-nearest-v2';
+  const policyId = 'east-cut-hrrr-nws-v3';
   const maxWeatherAge = 30 * 60 * 1000;
+  const maxForecastAge = 6 * 60 * 60 * 1000;
+  const fallbackEndpoint = 'https://api.weather.gov/gridpoints/MTR/86,106/forecast/hourly';
   const fields = ['temperature_2m', 'is_day', 'weather_code', 'cloud_cover', 'direct_normal_irradiance_instant'];
   const endpoint = 'https://api.open-meteo.com/v1/forecast?' + new URLSearchParams({
     latitude: '37.789', longitude: '-122.396', timezone: 'America/Los_Angeles',
@@ -114,6 +117,8 @@
     temperature_2m: [-150, 150], cloud_cover: [0, 100],
     direct_normal_irradiance_instant: [0, 2000],
   };
+  const forecastLabels = new Set(['rain likely', 'rain possible', 'drizzle likely', 'drizzle possible',
+    'thunderstorms likely', 'thunderstorms possible', 'snow likely', 'snow possible', 'fog likely', 'fog possible']);
 
   function normalize(value) {
     if (!value || typeof value !== 'object' || Array.isArray(value)
@@ -129,13 +134,39 @@
         && number >= minimum && number <= maximum) current[key] = number;
       else throw new TypeError(`Malformed weather value: ${key}`);
     }
+    if (value.source !== undefined) {
+      if (value.source !== 'nws-hourly'
+        || !Number.isSafeInteger(value.validUntil) || value.validUntil <= value.time
+        || value.validUntil - value.time > 3600
+        || !Number.isSafeInteger(value.issuedAt) || value.issuedAt <= 0
+        || (value.forecastLabel !== undefined && !forecastLabels.has(value.forecastLabel))) {
+        throw new TypeError('Malformed forecast provenance');
+      }
+      current.source = value.source;
+      current.validUntil = value.validUntil;
+      current.issuedAt = value.issuedAt;
+      if (value.forecastLabel !== undefined) current.forecastLabel = value.forecastLabel;
+    } else if (value.forecastLabel !== undefined || value.validUntil !== undefined || value.issuedAt !== undefined) {
+      throw new TypeError('Forecast provenance requires a source');
+    }
     return current;
+  }
+
+  function expiresAt(value) {
+    const current = normalize(value);
+    return current.source === 'nws-hourly'
+      ? Math.min(current.validUntil * 1000, current.issuedAt * 1000 + maxForecastAge)
+      : current.time * 1000 + maxWeatherAge;
   }
 
   function isFresh(current, now = Date.now()) {
     try {
-      const age = now - normalize(current).time * 1000;
-      return Number.isFinite(now) && age >= -30000 && age < maxWeatherAge;
+      const value = normalize(current);
+      if (!Number.isFinite(now) || now >= expiresAt(value)) return false;
+      const age = now - value.time * 1000;
+      return value.source === 'nws-hourly'
+        ? age >= 0 && now >= value.issuedAt * 1000 - 30000
+        : age >= -30000;
     } catch {
       return false;
     }
@@ -151,7 +182,7 @@
         || value.fetchedAt > now + 60000 || now - value.fetchedAt >= maxWeatherAge
         || !Number.isFinite(value.validUntil) || value.validUntil <= now
         || value.validUntil > value.fetchedAt + maxWeatherAge
-        || value.validUntil > value.current?.time * 1000 + maxWeatherAge
+        || value.validUntil > expiresAt(value.current)
         || !isFresh(value.current, now)) return null;
       const current = normalize(value.current);
       // A static deployment can lag a visitor's most recent live reading.
@@ -213,20 +244,129 @@
       cloudy: 'Cloudy', 'cloudy-sunset': 'Cloudy', night: 'Cloudy', overcast: 'Cloudy', 'overcast-night': 'Cloudy',
       rain: 'Raining', 'night-rain': 'Raining', fog: 'Foggy', 'night-fog': 'Foggy',
     };
-    const condition = [71, 73, 75, 77, 85, 86].includes(c.weather_code)
-      ? 'snowing' : labels[select(c, now)].toLowerCase();
+    const condition = c.forecastLabel || ([71, 73, 75, 77, 85, 86].includes(c.weather_code)
+      ? 'snowing' : labels[select(c, now)].toLowerCase());
     const temperature = c.temperature_2m === null ? '' : `${Math.round(c.temperature_2m)}°F and `;
-    return `Currently ${temperature}${condition} in San Francisco`;
+    return `${c.source === 'nws-hourly' ? 'Forecast: ' : 'Currently '}${temperature}${condition} in San Francisco`;
   }
 
-  async function fetchCurrent({ signal } = {}) {
-    const response = await fetch(endpoint, { signal, cache: 'no-store', credentials: 'omit' });
-    if (!response.ok) throw new Error(`Weather request failed (${response.status})`);
-    const payload = await response.json();
-    if (!payload || payload.error) throw new TypeError('Malformed weather response');
-    const current = normalize(payload.current);
-    if (!isFresh(current)) throw new Error('Weather data is outside the current time window');
+  function abortError() {
+    const error = new Error('Weather request aborted');
+    error.name = 'AbortError';
+    return error;
+  }
+
+  async function requestJSON(url, { signal, fetchImpl, timeoutMs }) {
+    if (signal?.aborted) throw abortError();
+    const controller = new AbortController();
+    let rejectAbort;
+    const cancelled = new Promise((resolve, reject) => { rejectAbort = reject; });
+    const cancel = error => { controller.abort(); rejectAbort(error); };
+    const onAbort = () => cancel(abortError());
+    signal?.addEventListener('abort', onAbort, { once: true });
+    const timeout = setTimeout(() => cancel(new Error('Weather request timed out')), timeoutMs);
+    try {
+      const request = (async () => {
+        const response = await fetchImpl(url, { signal: controller.signal, cache: 'no-store', credentials: 'omit' });
+        if (!response.ok) throw new Error(`Weather request failed (${response.status})`);
+        const payload = await response.json();
+        if (signal?.aborted || controller.signal.aborted) throw abortError();
+        return payload;
+      })();
+      return await Promise.race([request, cancelled]);
+    } finally {
+      clearTimeout(timeout);
+      signal?.removeEventListener('abort', onAbort);
+    }
+  }
+
+  function forecastCondition(text) {
+    if (typeof text !== 'string') throw new TypeError('Missing forecast condition');
+    const value = text.trim().toLowerCase().replace(/\s+/g, ' ')
+      // Wind does not alter the sky/precipitation classification. Only these
+      // recognized trailing modifiers are removed; uncertainty is retained.
+      .replace(/\s+and (?:breezy|windy|blustery)$/, '');
+    const skies = {
+      clear: 0, sunny: 0, 'mostly sunny': 1, 'mostly clear': 1,
+      'partly sunny': 2, 'partly cloudy': 2, 'mostly cloudy': 3,
+      cloudy: 3, overcast: 3,
+    };
+    // Hourly NWS descriptions do not report a numeric cloud percentage.
+    if (Object.hasOwn(skies, value)) return { weather_code: skies[value], cloud_cover: null };
+    // Only known weather vocabulary is accepted. Do not turn an unknown
+    // condition into clear skies, nor a chance of rain into reported rain.
+    const vocabulary = new Set(('a an the of and or then with slight chance possible likely isolated scattered '
+      + 'numerous occasional intermittent periods patchy areas widespread light moderate heavy freezing '
+      + 'rain rains showers shower drizzle thunderstorms thunderstorm snow snowflakes flurries fog '
+      + 'partly mostly cloudy sunny clear').split(' '));
+    if (!value.split(' ').every(word => vocabulary.has(word))) throw new TypeError('Unsupported forecast condition');
+    const kindOf = phrase => /\bthunderstorms?\b/.test(phrase) ? 'thunderstorms'
+      : /\bdrizzle\b/.test(phrase) ? 'drizzle'
+        : /\b(?:snow|snowflakes|flurries)\b/.test(phrase) ? 'snow'
+          : /\b(?:rain|rains|showers?)\b/.test(phrase) ? 'rain'
+            : /\bfog\b/.test(phrase) ? 'fog' : null;
+    let inheritedUncertainty = null;
+    const candidates = value.split(/\b(?:and|or|then|with)\b/).map(phrase => {
+      const kind = kindOf(phrase);
+      const uncertainty = /\blikely\b/.test(phrase) ? 'likely'
+        : /\b(?:chance|possible|isolated|scattered)\b/.test(phrase) ? 'possible' : inheritedUncertainty;
+      // "Chance rain and thunderstorms" qualifies both terms; "Rain and
+      // slight chance thunderstorms" still contains definite rain.
+      if (kind) inheritedUncertainty = uncertainty;
+      return kind ? { kind, uncertainty } : null;
+    }).filter(Boolean);
+    if (!candidates.length) throw new TypeError('Unsupported forecast condition');
+    const priority = ['thunderstorms', 'rain', 'drizzle', 'snow', 'fog'];
+    candidates.sort((a, b) => priority.indexOf(a.kind) - priority.indexOf(b.kind));
+    const selected = candidates.find(candidate => !candidate.uncertainty) || candidates[0];
+    if (selected.uncertainty) return { weather_code: 3, cloud_cover: null,
+      forecastLabel: `${selected.kind} ${selected.uncertainty}` };
+    return { weather_code: { rain: 61, drizzle: 51, thunderstorms: 95, snow: 73, fog: 45 }[selected.kind], cloud_cover: null };
+  }
+
+  function normalizeForecast(payload, now) {
+    const properties = payload?.properties;
+    if (!properties || !Array.isArray(properties.periods)) throw new TypeError('Malformed NWS forecast');
+    const issuedAt = Math.floor(Date.parse(properties.updateTime) / 1000);
+    const periods = properties.periods.filter(period =>
+      Date.parse(period.startTime) <= now && now < Date.parse(period.endTime));
+    if (periods.length !== 1) throw new Error('No unambiguous current forecast period');
+    const period = periods[0];
+    if (!['F', 'C'].includes(period.temperatureUnit)
+      || (period.temperature !== null && (typeof period.temperature !== 'number' || !Number.isFinite(period.temperature)))) {
+      throw new TypeError('Malformed forecast temperature');
+    }
+    const temperature = period.temperature === null ? null
+      : period.temperatureUnit === 'C' ? period.temperature * 9 / 5 + 32 : period.temperature;
+    const current = normalize({
+      source: 'nws-hourly', time: Date.parse(period.startTime) / 1000,
+      validUntil: Date.parse(period.endTime) / 1000, issuedAt,
+      is_day: solarPhase(now).isDay ? 1 : 0, temperature_2m: temperature,
+      direct_normal_irradiance_instant: null, ...forecastCondition(period.shortForecast),
+    });
+    if (!isFresh(current, now)) throw new Error('NWS forecast is outside its validity window');
     return current;
+  }
+
+  async function fetchCurrent({ signal, fetchImpl = fetch, now = () => Date.now() } = {}) {
+    try {
+      const payload = await requestJSON(endpoint, { signal, fetchImpl, timeoutMs: 3000 });
+      if (!payload || payload.error || payload.current?.source !== undefined) throw new TypeError('Malformed weather response');
+      const current = normalize(payload.current);
+      if (!isFresh(current, now())) throw new Error('Weather data is outside the current time window');
+      return current;
+    } catch (error) {
+      // Cancellation (hidden tab/navigation) is not an upstream outage.
+      if (signal?.aborted) throw abortError();
+      try {
+        const payload = await requestJSON(fallbackEndpoint, { signal, fetchImpl, timeoutMs: 4000 });
+        return normalizeForecast(payload, now());
+      } catch (fallbackError) {
+        if (signal?.aborted) throw abortError();
+        throw new AggregateError([error, fallbackError],
+          `Weather services failed: HRRR: ${error.message}; NWS: ${fallbackError.message}`);
+      }
+    }
   }
 
   // Start during HTML parsing, before the deferred scene controller. Resolve
@@ -245,14 +385,17 @@
   }
 
   host.SFWeather = Object.freeze({
-    endpoint, policyId, maxWeatherAge, refreshMs, fetchCurrent, isFresh, summarize, normalize, readInitial, readCache, solarPhase, nextSolarBoundary,
+    endpoint, fallbackEndpoint, policyId, maxWeatherAge, refreshMs, fetchCurrent, expiresAt, isFresh, summarize, normalize, readInitial, readCache, solarPhase, nextSolarBoundary,
     takeStartupRequest() {
       const request = startupRequest;
       startupRequest = null;
       return request;
     },
     pickScene: select,
-    describe: current => conditionLabels[normalize(current).weather_code],
+    describe: current => {
+      const value = normalize(current);
+      return value.forecastLabel || conditionLabels[value.weather_code];
+    },
   });
   if (page) host.dispatchEvent(new Event('sf-weather-ready'));
 })();

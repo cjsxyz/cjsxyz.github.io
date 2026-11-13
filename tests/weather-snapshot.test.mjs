@@ -28,12 +28,23 @@ function payload(now = noon, overrides = {}) {
       cloud_cover: 45, direct_normal_irradiance_instant: 500,
       ...overrides,
     },
-    daily: {
-      time: [seconds(sunrise - 7 * 60 * minute), seconds(sunrise - 7 * 60 * minute + day)],
-      sunrise: [seconds(sunrise), seconds(sunrise + day + minute)],
-      sunset: [seconds(sunset), seconds(sunset + day - minute)],
-    },
   };
+}
+
+function nwsCurrent(overrides = {}) {
+  return payload(noon, {
+    source: 'nws-hourly', time: seconds(noon), validUntil: seconds(noon + 60 * minute),
+    issuedAt: seconds(noon - 60 * minute), weather_code: 3, cloud_cover: 90,
+    direct_normal_irradiance_instant: null, forecastLabel: 'rain likely', ...overrides,
+  }).current;
+}
+
+function nwsPayload() {
+  return { properties: {
+    updateTime: new Date(noon - 60 * minute).toISOString(),
+    periods: [{ startTime: new Date(noon).toISOString(), endTime: new Date(noon + 60 * minute).toISOString(),
+      isDaytime: true, temperature: 58, temperatureUnit: 'F', shortForecast: 'Rain Likely' }],
+  } };
 }
 
 const snapshot = (now = noon, overrides = {}) => createSnapshot(payload(now, overrides), now);
@@ -267,16 +278,39 @@ test('recent fetch cannot extend an older reading beyond its actual freshness li
   assert.equal(validateSnapshot({ ...result, validUntil: noon + 30 * minute }, noon), null);
 });
 
-test('creation requires two valid chronological solar-day entries', () => {
-  const valid = payload();
-  for (const daily of [
-    undefined, {}, { sunrise: [], sunset: [] },
-    { sunrise: valid.daily.sunrise.slice(0, 1), sunset: valid.daily.sunset.slice(0, 1) },
-    { ...valid.daily, sunrise: ['14:30', valid.daily.sunrise[1]] },
-    { ...valid.daily, sunrise: [valid.daily.sunset[0], valid.daily.sunrise[1]] },
-    { ...valid.daily, sunrise: [...valid.daily.sunrise].reverse() },
-    { ...valid.daily, sunset: [valid.daily.sunset[0], null] },
-  ]) assert.throws(() => createSnapshot({ ...valid, daily }, noon), JSON.stringify(daily));
+test('creation needs only current data and uses the local solar clock', () => {
+  const result = createSnapshot(payload(), noon);
+  assert.equal(result.scene, 'cloudy');
+  assert.equal(result.validUntil, noon + 30 * minute);
+  // Daily values are unused, so an unrelated provider field cannot break startup.
+  assert.deepEqual(createSnapshot({ ...payload(), daily: { sunrise: ['bad'] } }, noon), result);
+});
+
+test('NWS current-hour snapshots remain usable after the first 30 minutes without retimestamping', () => {
+  const at = noon + 45 * minute;
+  const current = nwsCurrent();
+  const result = createSnapshot({ current }, at);
+  assert.equal(result.scene, 'overcast');
+  assert.deepEqual(result.current, current);
+  assert.equal(result.fetchedAt, at);
+  assert.equal(result.validUntil, noon + 60 * minute);
+  assert.ok(validateSnapshot(result, result.validUntil - 1));
+  assert.equal(validateSnapshot(result, result.validUntil), null);
+  assert.equal(validateSnapshot({ ...result, validUntil: result.validUntil + 1 }, at), null);
+});
+
+test('NWS snapshot expiry honors issuance age as well as hour end and snapshot fetch age', () => {
+  const current = nwsCurrent({ issuedAt: seconds(noon - 6 * 60 * minute + 10 * minute) });
+  const result = createSnapshot({ current }, noon);
+  assert.equal(result.validUntil, noon + 10 * minute);
+  assert.ok(validateSnapshot(result, noon + 10 * minute - 1));
+  assert.equal(validateSnapshot(result, noon + 10 * minute), null);
+  assert.throws(() => createSnapshot({ current }, noon + 10 * minute));
+  assert.throws(() => createSnapshot({ current: nwsCurrent({ issuedAt: seconds(noon - 6 * 60 * minute) }) }, noon));
+  const recent = createSnapshot({ current: nwsCurrent() }, noon);
+  assert.equal(recent.validUntil, noon + 30 * minute, 'published snapshots still refresh within 30 minutes');
+  const backdated = { ...recent, fetchedAt: noon - minute };
+  assert.equal(validateSnapshot(backdated, noon), null, 'a forecast must be valid when it was fetched too');
 });
 
 test('validation rejects stale, future, mismatched and malformed snapshots', () => {
@@ -307,7 +341,7 @@ test('validation preserves optional full source revisions and rejects invalid me
   }
 });
 
-test('provider fetch requests Fahrenheit and solar times with an abort signal', async () => {
+test('provider fetch shares the browser HRRR endpoint and avoids a second solar-data request', async () => {
   const calls = [];
   const result = await fetchSnapshot({
     now: () => noon,
@@ -325,8 +359,8 @@ test('provider fetch requests Fahrenheit and solar times with an abort signal', 
   assert.equal(calls[0].url.searchParams.get('latitude'), '37.789');
   assert.equal(calls[0].url.searchParams.get('longitude'), '-122.396');
   assert.equal(calls[0].url.searchParams.get('timeformat'), 'unixtime');
-  assert.match(calls[0].url.searchParams.get('daily'), /sunrise/);
-  assert.match(calls[0].url.searchParams.get('daily'), /sunset/);
+  assert.equal(calls[0].url.searchParams.has('daily'), false);
+  assert.equal(calls[0].url.searchParams.has('forecast_days'), false);
   assert.ok(calls[0].options.signal instanceof AbortSignal);
 });
 
@@ -338,6 +372,24 @@ test('provider fetch rejects network, HTTP, JSON and validation failures', async
     async () => jsonResponse({ error: true }),
     async () => jsonResponse(payload(noon, { weather_code: 999 })),
   ]) await assert.rejects(fetchSnapshot({ fetchImpl, now: () => noon }));
+});
+
+test('snapshot fetch uses the same current-hour NWS fallback after HRRR fails', async () => {
+  const calls = [];
+  const at = noon + 45 * minute;
+  const result = await fetchSnapshot({ now: () => at,
+    fetchImpl: async url => {
+      calls.push(new URL(url));
+      return new URL(url).hostname === 'api.open-meteo.com'
+        ? jsonResponse({}, 503) : jsonResponse(nwsPayload());
+    },
+  });
+  assert.deepEqual(calls.map(url => url.hostname), ['api.open-meteo.com', 'api.weather.gov']);
+  assert.equal(result.current.source, 'nws-hourly');
+  assert.equal(result.current.time, seconds(noon));
+  assert.equal(result.current.forecastLabel, 'rain likely');
+  assert.equal(result.validUntil, noon + 60 * minute);
+  assert.equal(result.scene, 'overcast', 'likely rain is not a report of rain falling');
 });
 
 test('comparison skips unchanged fresh weather and small temperature fluctuations', () => {
@@ -359,6 +411,16 @@ test('comparison deploys meaningful weather changes or aged/invalid published da
   for (const old of [null, {}, snapshot(noon - 30 * minute)]) {
     assert.equal(compareSnapshots(snapshot(), old, noon).shouldDeploy, true);
   }
+});
+
+test('comparison publishes a source or forecast qualifier change even with the same scene', () => {
+  const published = createSnapshot({ current: nwsCurrent({ temperature_2m: 58.2 }) }, noon);
+  const primary = snapshot(noon + minute, { weather_code: 3, cloud_cover: 90,
+    direct_normal_irradiance_instant: null });
+  assert.equal(primary.scene, published.scene);
+  assert.equal(compareSnapshots(primary, published, noon + minute).shouldDeploy, true);
+  const unqualified = createSnapshot({ current: nwsCurrent({ forecastLabel: undefined }) }, noon + minute);
+  assert.equal(compareSnapshots(unqualified, published, noon + minute).shouldDeploy, true);
 });
 
 test('comparison refuses an invalid candidate regardless of published data', () => {
@@ -409,8 +471,9 @@ test('check fails closed on scheduled provider failure and supports forced code 
     assert.equal(result.shouldDeploy, force);
     assert.equal(result.snapshot, null);
     assert.equal(result.reason, force ? 'forced-with-live-fallback' : 'provider-unavailable');
-    assert.equal(calls.length, force ? 2 : 1);
+    assert.equal(calls.length, force ? 3 : 2);
     assert.equal(calls.filter(url => new URL(url).hostname === 'api.open-meteo.com').length, 1);
+    assert.equal(calls.filter(url => new URL(url).hostname === 'api.weather.gov').length, 1);
     assert.equal(JSON.parse(await readFile(output, 'utf8')), null);
     assert.match(await readFile(githubOutput, 'utf8'), new RegExp(`should_deploy=${force}`));
   }
@@ -465,7 +528,7 @@ test('forced provider outage reuses valid published weather without extending it
   const result = await check({ output, githubOutput, force: true, sourceRevision: revisionB, now: () => noon,
     fetchImpl: async url => {
       calls.push(String(url));
-      if (new URL(url).hostname === 'api.open-meteo.com') throw new Error('provider unavailable');
+      if (['api.open-meteo.com', 'api.weather.gov'].includes(new URL(url).hostname)) throw new Error('provider unavailable');
       return jsonResponse(published);
     },
   });
@@ -477,7 +540,7 @@ test('forced provider outage reuses valid published weather without extending it
   assert.equal(validateSnapshot(result.snapshot, noon + 5 * minute), null);
   assert.deepEqual(JSON.parse(await readFile(output, 'utf8')), { ...published, sourceRevision: revisionB });
   assert.match(await readFile(githubOutput, 'utf8'), /should_deploy=true\nreason=forced-with-cached-snapshot/);
-  assert.equal(calls.length, 2);
+  assert.equal(calls.length, 3);
 });
 
 test('forced provider outage falls back to live startup when published weather is invalid', async t => {
@@ -487,7 +550,7 @@ test('forced provider outage falls back to live startup when published weather i
     const output = path.join(directory, `invalid-cache-${index}.json`);
     const result = await check({ output, githubOutput: null, force: true, sourceRevision: revisionB, now: () => noon,
       fetchImpl: async url => {
-        if (new URL(url).hostname === 'api.open-meteo.com') return jsonResponse({}, 503);
+        if (['api.open-meteo.com', 'api.weather.gov'].includes(new URL(url).hostname)) return jsonResponse({}, 503);
         return jsonResponse(published);
       },
     });
@@ -651,6 +714,33 @@ test('build makes each selected scene visible without JavaScript and inlines one
     assert.deepEqual(JSON.parse(await readFile(path.join(fixture.output, 'weather-snapshot.json'), 'utf8')), candidate);
   }
   assert.equal(await readFile(path.join(fixture.sourceRoot, 'index.html'), 'utf8'), fixture.files['index.html']);
+});
+
+test('a forced deploy builds NWS fallback with its source, forecast qualifier and original times intact', async t => {
+  const fixture = await buildFixture(t);
+  const at = noon + 45 * minute;
+  const calls = [];
+  const checked = await check({ output: fixture.snapshotPath, githubOutput: null, force: true,
+    sourceRevision: revisionB, now: () => at,
+    fetchImpl: async url => {
+      calls.push(new URL(url).hostname);
+      if (new URL(url).hostname === 'api.open-meteo.com') throw new Error('HRRR offline');
+      return jsonResponse(nwsPayload());
+    },
+  });
+  assert.deepEqual(calls, ['api.open-meteo.com', 'api.weather.gov']);
+  assert.equal(checked.reason, 'forced');
+  assert.equal(checked.providerError, null);
+  assert.equal(checked.snapshot.current.source, 'nws-hourly');
+  assert.equal(checked.snapshot.current.forecastLabel, 'rain likely');
+  assert.equal(checked.snapshot.current.time, seconds(noon));
+  assert.equal(checked.snapshot.current.issuedAt, seconds(noon - 60 * minute));
+  await build({ ...fixture, now: at });
+  const html = await readFile(path.join(fixture.output, 'index.html'), 'utf8');
+  assert.deepEqual(embeddedJSON(html, 'initial-weather'), checked.snapshot);
+  assert.deepEqual(JSON.parse(await readFile(path.join(fixture.output, 'weather-snapshot.json'), 'utf8')), checked.snapshot);
+  assert.equal(attributes(/<html\b[^>]*>/.exec(html)[0])['data-scene'], 'overcast');
+  assert.match(weather.summarize(checked.snapshot.current, at), /rain likely/);
 });
 
 test('build omits stale or invalid inline weather while keeping the live startup fallback', async t => {

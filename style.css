@@ -212,6 +212,11 @@ body {
   text-align: center;
   white-space: nowrap;
 }
+/* Keep qualified backup forecasts readable within the same drawer height. */
+.weather-summary[data-forecast="true"] {
+  white-space: normal;
+  text-wrap: balance;
+}
 .bio-summary {
   max-height: calc(100dvh - 140px);
   overflow-y: auto;

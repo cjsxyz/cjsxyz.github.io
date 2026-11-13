@@ -8,7 +8,6 @@ const weather = globalThis.SFWeather;
 const MINUTE = 60000;
 export const MAX_SNAPSHOT_AGE = 30 * MINUTE;
 export const REFRESH_DEPLOY_AGE = 15 * MINUTE;
-export const MAX_PROVIDER_AGE = 30 * MINUTE;
 const BUILD_MARKER = '.weather-snapshot-build';
 const revisionPattern = /^[a-f0-9]{40}$/i;
 
@@ -17,11 +16,10 @@ export function validateSnapshot(value, now = Date.now()) {
     if (!value || value.version !== 1 || value.weatherPolicy !== weather.policyId || !Number.isFinite(now)
       || !Number.isFinite(value.fetchedAt) || value.fetchedAt <= 0 || value.fetchedAt > now
       || !Number.isFinite(value.validUntil) || value.validUntil <= now
-      || value.validUntil > value.fetchedAt + MAX_SNAPSHOT_AGE
-      || value.validUntil > value.current?.time * 1000 + weather.maxWeatherAge) return null;
+      || value.validUntil > value.fetchedAt + MAX_SNAPSHOT_AGE) return null;
     const current = weather.normalize(value.current);
-    const providerAgeAtFetch = value.fetchedAt - current.time * 1000;
-    if (providerAgeAtFetch < -30000 || providerAgeAtFetch > MAX_PROVIDER_AGE || !weather.isFresh(current, now)) return null;
+    if (value.validUntil > weather.expiresAt(current)
+      || !weather.isFresh(current, value.fetchedAt) || !weather.isFresh(current, now)) return null;
     const scene = weather.pickScene(current, now);
     if (value.scene !== scene) return null;
     if (value.sourceRevision !== undefined && (typeof value.sourceRevision !== 'string' || !revisionPattern.test(value.sourceRevision))) return null;
@@ -35,22 +33,8 @@ export function validateSnapshot(value, now = Date.now()) {
 export function createSnapshot(payload, now = Date.now()) {
   if (!payload || payload.error || !Number.isFinite(now)) throw new TypeError('Invalid weather response');
   const current = weather.normalize(payload.current);
-  const providerAge = now - current.time * 1000;
-  if (providerAge < -30000 || providerAge > MAX_PROVIDER_AGE || !weather.isFresh(current, now)) {
+  if (!weather.isFresh(current, now)) {
     throw new Error('Provider current weather is outside the snapshot freshness window');
-  }
-  const rises = payload.daily?.sunrise, sets = payload.daily?.sunset;
-  if (!Array.isArray(rises) || !Array.isArray(sets) || rises.length < 2 || sets.length !== rises.length) {
-    throw new TypeError('Two days of sunrise and sunset times are required');
-  }
-  const days = rises.map((rise, index) => {
-    const set = sets[index];
-    if (!Number.isSafeInteger(rise) || !Number.isSafeInteger(set) || rise <= 0 || rise >= set
-      || (index > 0 && rise <= sets[index - 1])) throw new TypeError('Invalid sunrise/sunset order');
-    return { rise: rise * 1000, set: set * 1000 };
-  });
-  if (days[0].rise > now + 24 * 60 * MINUTE || days.at(-1).set < now) {
-    throw new Error('Sunrise/sunset dates do not cover the current time');
   }
   // Use the exact same solar clock as the browser, including the clear-sky
   // sunset interval. Provider readings may still describe the preceding bucket.
@@ -58,7 +42,7 @@ export function createSnapshot(payload, now = Date.now()) {
   current.is_day = solar.isDay ? 1 : 0;
   const candidate = {
     version: 1, weatherPolicy: weather.policyId, current, fetchedAt: now,
-    validUntil: Math.min(now + MAX_SNAPSHOT_AGE, current.time * 1000 + weather.maxWeatherAge, solar.nextBoundary),
+    validUntil: Math.min(now + MAX_SNAPSHOT_AGE, weather.expiresAt(current), solar.nextBoundary),
     scene: weather.pickScene(current, now),
   };
   const snapshot = validateSnapshot(candidate, now);
@@ -80,11 +64,10 @@ async function requestJSON(url, fetchImpl, timeoutMs = 10000) {
 }
 
 export async function fetchSnapshot({ fetchImpl = fetch, now = () => Date.now() } = {}) {
-  const endpoint = new URL(weather.endpoint);
-  endpoint.searchParams.set('daily', 'sunrise,sunset');
-  endpoint.searchParams.set('forecast_days', '2');
-  const payload = await requestJSON(endpoint.href, fetchImpl);
-  return createSnapshot(payload, now());
+  // Use the same primary/fallback policy and validation as visitors. Solar
+  // transitions are computed locally; a second daily-data request adds no value.
+  const current = await weather.fetchCurrent({ fetchImpl, now });
+  return createSnapshot({ current }, now());
 }
 
 export function compareSnapshots(candidate, published, now = Date.now()) {
@@ -98,6 +81,8 @@ export function compareSnapshots(candidate, published, now = Date.now()) {
   const rounded = value => value === null ? null : Math.round(value);
   if (next.scene !== previous.scene
     || rounded(next.current.temperature_2m) !== rounded(previous.current.temperature_2m)
+    || next.current.source !== previous.current.source
+    || next.current.forecastLabel !== previous.current.forecastLabel
     || next.current.weather_code !== previous.current.weather_code
     || next.current.is_day !== previous.current.is_day) return { shouldDeploy: true, reason: 'weather-changed' };
   if (now - previous.fetchedAt >= REFRESH_DEPLOY_AGE) return { shouldDeploy: true, reason: 'snapshot-refresh-due' };
