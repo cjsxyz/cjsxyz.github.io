@@ -30,6 +30,14 @@ export function validateSnapshot(value, now = Date.now()) {
   }
 }
 
+export function validateLastKnownSnapshot(value, now = Date.now()) {
+  // Retention is separate from freshness: a snapshot must have been valid when
+  // fetched, and its original timestamps and scene metadata remain unchanged.
+  if (!value || !Number.isFinite(now) || !Number.isFinite(value.fetchedAt)
+    || value.fetchedAt > now) return null;
+  return validateSnapshot(value, value.fetchedAt);
+}
+
 export function createSnapshot(payload, now = Date.now()) {
   if (!payload || payload.error || !Number.isFinite(now)) throw new TypeError('Invalid weather response');
   const current = weather.normalize(payload.current);
@@ -109,7 +117,7 @@ export async function check({ output, force = false, fetchImpl = fetch, now = ()
   }
   let reusedPublished = false;
   if (force && !snapshot) {
-    snapshot = validateSnapshot(published, now());
+    snapshot = validateLastKnownSnapshot(published, now());
     reusedPublished = Boolean(snapshot);
   }
   if (snapshot && revision) snapshot = { ...snapshot, sourceRevision: revision };
@@ -244,7 +252,9 @@ export async function build({ snapshotPath, output, sourceRoot = sourceDirectory
     if (files.length && !files.includes(BUILD_MARKER)) throw new Error('Refusing to replace a non-build output directory');
   } catch (error) { if (error.code !== 'ENOENT') throw error; }
   const candidate = JSON.parse(await readFile(snapshotPath, 'utf8'));
-  const snapshot = validateSnapshot(candidate, now);
+  // A provider outage or a queued build must not erase the last successful
+  // weather/video. Retained snapshots are never rewritten to appear fresh.
+  const snapshot = validateLastKnownSnapshot(candidate, now);
   const [html, weatherSource, skySource, startupSource, styleSource] = await Promise.all([
     readFile(path.join(root, 'index.html'), 'utf8'), readFile(path.join(root, 'weather.js'), 'utf8'),
     readFile(path.join(root, 'sky.js'), 'utf8'), readFile(path.join(root, 'startup.js'), 'utf8'),
@@ -256,7 +266,9 @@ export async function build({ snapshotPath, output, sourceRoot = sourceDirectory
   const styleTag = /<link\b(?=[^>]*\brel="stylesheet")(?=[^>]*\bhref="\.\/style\.css(?:\?[^\"]*)?")[^>]*>/g;
   if ((html.match(styleTag) || []).length !== 1) throw new Error('Expected exactly one external style.css stylesheet');
   await validateRecordingMedia(root, html);
-  const media = snapshot ? await initialMedia(root, html, skySource, snapshot.scene) : null;
+  // Keep the reading's original scene as provenance, but use today's solar
+  // phase for its retained visual (for example, daytime rain after night rain).
+  const media = snapshot ? await initialMedia(root, html, skySource, weather.pickScene(snapshot.current, now)) : null;
   const mediaDescriptor = media ? { scene: media.scene, src: media.src, webmSrc: media.webmSrc, rate: media.rate } : null;
   let initial = snapshot ? `<script id="initial-weather" type="application/json">${jsonForHTML(snapshot)}</script>\n    ` : '';
   if (mediaDescriptor) initial += `<script id="initial-media" type="application/json">${jsonForHTML(mediaDescriptor)}</script>\n    `;

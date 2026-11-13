@@ -5,7 +5,7 @@ import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { execFileSync } from 'node:child_process';
 import {
-  validateSnapshot, createSnapshot, fetchSnapshot, compareSnapshots, check, build,
+  validateSnapshot, validateLastKnownSnapshot, createSnapshot, fetchSnapshot, compareSnapshots, check, build,
 } from '../scripts/weather-snapshot.mjs';
 
 // Run: node --test tests/weather-snapshot.test.mjs
@@ -341,6 +341,34 @@ test('validation preserves optional full source revisions and rejects invalid me
   }
 });
 
+test('last-known retention preserves expired HRRR and NWS snapshots without making them fresh', () => {
+  for (const published of [snapshot(), createSnapshot({ current: nwsCurrent() }, noon)]) {
+    const later = noon + 90 * day;
+    assert.deepEqual(validateLastKnownSnapshot(published, later), published);
+    assert.equal(validateSnapshot(published, later), null);
+    assert.equal(weather.isFresh(published.current, later), false);
+    assert.equal(compareSnapshots(published, published, later).shouldDeploy, false,
+      'retention must not turn an expired reading into a fresh scheduled candidate');
+  }
+  const boundary = snapshot(sunsetStart - minute, { weather_code: 0, cloud_cover: 0 });
+  assert.equal(validateLastKnownSnapshot(boundary, night).scene, 'sunny',
+    'retention preserves provenance; the browser may apply the present solar phase separately');
+});
+
+test('last-known retention only accepts snapshots that were valid at their original fetch time', () => {
+  const good = snapshot();
+  for (const invalid of [
+    null, {}, { ...good, version: 2 }, { ...good, weatherPolicy: 'old-policy' },
+    { ...good, fetchedAt: noon + minute }, { ...good, fetchedAt: 0 },
+    { ...good, validUntil: noon }, { ...good, validUntil: noon + 31 * minute },
+    { ...good, scene: 'night' }, { ...good, sourceRevision: 'invalid' },
+    { ...good, current: { ...good.current, time: seconds(noon - 31 * minute) } },
+    { ...good, current: nwsCurrent({ issuedAt: seconds(noon - 7 * 60 * minute) }) },
+  ]) assert.equal(validateLastKnownSnapshot(invalid, noon), null, JSON.stringify(invalid));
+  assert.equal(validateLastKnownSnapshot(good, Number.NaN), null);
+  assert.equal(validateLastKnownSnapshot(good, noon - 1), null, 'future fetches cannot enter retention');
+});
+
 test('provider fetch shares the browser HRRR endpoint and avoids a second solar-data request', async () => {
   const calls = [];
   const result = await fetchSnapshot({
@@ -543,6 +571,37 @@ test('forced provider outage reuses valid published weather without extending it
   assert.equal(calls.length, 3);
 });
 
+test('forced total outage retains expired published weather through a cold-load build', async t => {
+  const fixture = await buildFixture(t);
+  const at = noon + 3 * day;
+  for (const original of [snapshot(), createSnapshot({ current: nwsCurrent() }, noon)]) {
+    const published = { ...original, sourceRevision: revisionA };
+    const expected = { ...published, sourceRevision: revisionB };
+    const calls = [];
+    const checked = await check({ output: fixture.snapshotPath, githubOutput: null, force: true,
+      sourceRevision: revisionB, now: () => at,
+      fetchImpl: async url => {
+        calls.push(new URL(url).hostname);
+        if (['api.open-meteo.com', 'api.weather.gov'].includes(new URL(url).hostname)) {
+          throw new Error('provider unavailable');
+        }
+        return jsonResponse(published);
+      },
+    });
+    assert.deepEqual(calls, ['api.open-meteo.com', 'api.weather.gov', 'chrisshu.com']);
+    assert.equal(checked.shouldDeploy, true);
+    assert.equal(checked.reason, 'forced-with-cached-snapshot');
+    assert.deepEqual(checked.snapshot, expected);
+    assert.equal(validateSnapshot(checked.snapshot, at), null);
+    await build({ ...fixture, now: at + 60 * minute });
+    const html = await readFile(path.join(fixture.output, 'index.html'), 'utf8');
+    assert.deepEqual(embeddedJSON(html, 'initial-weather'), expected);
+    assert.equal(embeddedJSON(html, 'initial-media').scene, published.scene);
+    assert.equal(attributes(/<html\b[^>]*>/.exec(html)[0])['data-scene'], published.scene);
+    assert.deepEqual(JSON.parse(await readFile(path.join(fixture.output, 'weather-snapshot.json'), 'utf8')), expected);
+  }
+});
+
 test('forced provider outage falls back to live startup when published weather is invalid', async t => {
   const directory = await temporary(t);
   for (const [index, published] of [null, {}, { ...snapshot(), validUntil: noon }, { ...snapshot(), sourceRevision: 'invalid' },
@@ -743,7 +802,36 @@ test('a forced deploy builds NWS fallback with its source, forecast qualifier an
   assert.match(weather.summarize(checked.snapshot.current, at), /rain likely/);
 });
 
-test('build omits stale or invalid inline weather while keeping the live startup fallback', async t => {
+test('build preserves a valid candidate that expires while deployment is queued', async t => {
+  const fixture = await buildFixture(t);
+  const original = snapshot(sunsetStart - minute, { weather_code: 0, cloud_cover: 0 });
+  await writeFile(fixture.snapshotPath, JSON.stringify(original));
+  const result = await build({ ...fixture, now: night });
+  const html = await readFile(path.join(fixture.output, 'index.html'), 'utf8');
+  assert.equal(result.snapshot.scene, 'sunny');
+  assert.deepEqual(embeddedJSON(html, 'initial-weather'), original);
+  assert.equal(embeddedJSON(html, 'initial-media').scene, 'clear-night');
+  assert.equal(attributes(/<html\b[^>]*>/.exec(html)[0])['data-scene'], 'clear-night');
+  assert.deepEqual(JSON.parse(await readFile(path.join(fixture.output, 'weather-snapshot.json'), 'utf8')), original);
+  assert.equal(validateSnapshot(original, night), null);
+});
+
+test('retained nighttime weather builds a daylight poster without changing the original reading', async t => {
+  const fixture = await buildFixture(t);
+  const original = snapshot(night, { weather_code: 61 });
+  const at = noon + day;
+  await writeFile(fixture.snapshotPath, JSON.stringify(original));
+  await build({ ...fixture, now: at });
+  const html = await readFile(path.join(fixture.output, 'index.html'), 'utf8');
+  assert.equal(original.scene, 'night-rain');
+  assert.deepEqual(embeddedJSON(html, 'initial-weather'), original);
+  assert.equal(embeddedJSON(html, 'initial-media').scene, 'rain');
+  assert.equal(attributes(/<html\b[^>]*>/.exec(html)[0])['data-scene'], 'rain');
+  assert.ok(sceneMarkup(html, 'rain').poster.src.startsWith('data:image/webp;base64,'));
+  assert.ok(!Object.hasOwn(sceneMarkup(html, 'night-rain').poster, 'src'));
+});
+
+test('build omits never-valid inline weather while keeping the live startup fallback', async t => {
   const fixture = await buildFixture(t);
   for (const candidate of [null, {}, { ...snapshot(), validUntil: noon }, { ...snapshot(), scene: 'rain' }]) {
     await writeFile(fixture.snapshotPath, JSON.stringify(candidate));
@@ -768,11 +856,11 @@ test('build omits stale or invalid inline weather while keeping the live startup
 
 test('weather startup stays selected while the optional lake recording remains unrequested', async t => {
   const fixture = await recordingFixture(t);
-  for (const candidate of [null, {}, { ...snapshot(), validUntil: noon }, snapshot(), snapshot(noon, { weather_code: 61 })]) {
+  for (const candidate of [null, {}, { ...snapshot(), validUntil: noon }, snapshot(), snapshot(noon - day), snapshot(noon, { weather_code: 61 })]) {
     await writeFile(fixture.snapshotPath, JSON.stringify(candidate));
     const result = await build({ ...fixture, now: noon });
     const html = await readFile(path.join(fixture.output, 'index.html'), 'utf8');
-    const expectedWeather = validateSnapshot(candidate, noon);
+    const expectedWeather = validateLastKnownSnapshot(candidate, noon);
     assert.equal(result.snapshot?.scene ?? null, expectedWeather?.scene ?? null);
     assert.deepEqual(embeddedJSON(html, 'initial-weather'), expectedWeather ?? undefined);
     assert.deepEqual(embeddedJSON(html, 'recording-media'), fixture.config);

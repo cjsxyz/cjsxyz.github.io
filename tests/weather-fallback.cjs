@@ -27,11 +27,20 @@ const nws = (changes = {}, properties = {}) => ({ properties: {
   generatedAt: new Date(now).toISOString(), periods: [period(changes)], ...properties,
 } });
 
-function load({ clock = now, timerScale = 1 } = {}) {
+function load({ clock = now, timerScale = 1, initial = null, cache = null, storageThrows = false } = {}) {
   const delays = [];
   class Clock extends Date { static now() { return clock; } }
   const context = vm.createContext({
     Date: Clock, URLSearchParams, AbortController, clearTimeout,
+    Event: class Event { constructor(type) { this.type = type; } }, dispatchEvent() {},
+    document: { currentScript: null, hidden: false, querySelector(selector) {
+      return selector === '#initial-weather' && initial !== null
+        ? { textContent: typeof initial === 'string' ? initial : JSON.stringify(initial) } : null;
+    } },
+    localStorage: { getItem() {
+      if (storageThrows) throw new Error('Storage disabled');
+      return typeof cache === 'string' ? cache : JSON.stringify(cache);
+    } },
     setTimeout(fn, ms) { delays.push(ms); return setTimeout(fn, ms * timerScale); },
   });
   vm.runInContext(source, context, { filename: 'weather.js' });
@@ -307,4 +316,93 @@ test('the next refresh returns to HRRR after recovery and drops forecast-only me
   assert.equal(current.forecastLabel, undefined);
   assert.equal(weather.expiresAt(current), now + 30 * minute);
   assert.equal(weather.summarize(current, now), 'Currently 59°F and cloudy in San Francisco');
+});
+
+function savedReport(at, changes = {}, published = false) {
+  const { weather } = load();
+  const current = hrrr(at - 5 * minute, changes).current;
+  const value = { weatherPolicy: weather.policyId, current, fetchedAt: at };
+  return published ? { ...value, version: 1,
+    validUntil: Math.min(at + 30 * minute, weather.expiresAt(current)), scene: weather.pickScene(current, at) } : value;
+}
+
+test('an expired published report can be retained without making fresh-only APIs accept it', () => {
+  const initial = savedReport(now - 8 * hour, { is_day: 0 }, true);
+  const original = JSON.stringify(initial);
+  const { weather } = load({ initial, storageThrows: true });
+  assert.equal(weather.readInitial(), null);
+  assert.equal(weather.readCache(), null);
+  const retained = weather.readLastKnown();
+  assert.equal(retained.current.time, initial.current.time);
+  assert.equal(retained.fetchedAt, initial.fetchedAt);
+  assert.equal(weather.isFresh(retained.current), false);
+  assert.equal(initial.scene, 'overcast-night');
+  assert.equal(retained.scene, 'overcast', 'retained clouds still respect the actual daylight clock');
+  assert.equal(JSON.stringify(initial), original, 'the report must not be refreshed by retention');
+});
+
+test('most recent provider reading wins even when the older reading was fetched later', () => {
+  const initial = savedReport(now - hour, { time: (now - 85 * minute) / 1000 }, true);
+  const cache = savedReport(now - 70 * minute, { time: (now - 75 * minute) / 1000, weather_code: 61 });
+  const { weather } = load({ initial, cache });
+  const retained = weather.readLastKnown();
+  assert.equal(retained.current.time, cache.current.time);
+  assert.equal(retained.fetchedAt, cache.fetchedAt);
+  assert.equal(retained.scene, 'rain');
+  assert.equal(weather.readCache(), null);
+  assert.equal(weather.readInitial(), null);
+});
+
+test('NWS retained provenance and later issuance survive without invented timestamps', () => {
+  const fetchedAt = now - 2 * hour;
+  const forecastStart = fetchedAt - 45 * minute;
+  const base = savedReport(fetchedAt, { time: forecastStart / 1000, source: 'nws-hourly',
+    validUntil: (forecastStart + hour) / 1000, issuedAt: (fetchedAt - 5 * minute) / 1000,
+    cloud_cover: null, direct_normal_irradiance_instant: null, forecastLabel: 'rain likely',
+  }, true);
+  const cache = savedReport(fetchedAt - minute, { time: forecastStart / 1000, source: 'nws-hourly',
+    validUntil: (forecastStart + hour) / 1000, issuedAt: (fetchedAt - 10 * minute) / 1000,
+    cloud_cover: null, direct_normal_irradiance_instant: null, forecastLabel: 'rain possible',
+  });
+  const { weather } = load({ initial: base, cache });
+  const retained = weather.readLastKnown();
+  assert.equal(retained.current.source, 'nws-hourly');
+  assert.equal(retained.current.forecastLabel, 'rain likely');
+  assert.equal(retained.current.time, base.current.time);
+  assert.equal(retained.current.issuedAt, base.current.issuedAt);
+  assert.equal(retained.current.validUntil, base.current.validUntil);
+  assert.equal(retained.fetchedAt, base.fetchedAt);
+  assert.equal(weather.isFresh(retained.current), false);
+});
+
+test('retention rejects malformed, future and never-valid records and unknown policies', () => {
+  const good = savedReport(now - 2 * hour, {}, true);
+  for (const changes of [
+    { weatherPolicy: 'unknown-policy' }, { fetchedAt: now + 1 }, { fetchedAt: -1 }, { fetchedAt: 0 },
+    { fetchedAt: 'yesterday' }, { current: { ...good.current, time: now / 1000 + 1 } },
+    { current: { ...good.current, time: (good.fetchedAt - hour) / 1000 } },
+    { current: { ...good.current, weather_code: 999 } }, { version: 2 },
+    { validUntil: good.fetchedAt }, { scene: 'sunny' },
+  ]) {
+    const { weather } = load({ initial: { ...good, ...changes } });
+    assert.equal(weather.readLastKnown(), null, JSON.stringify(changes));
+  }
+  for (const changes of [
+    { weatherPolicy: 'east-cut-nbm-nearest-v1' }, { fetchedAt: now + 1 },
+    { current: { ...good.current, time: (good.fetchedAt - hour) / 1000 } },
+  ]) {
+    const { weather } = load({ cache: { ...good, ...changes } });
+    assert.equal(weather.readLastKnown(), null);
+  }
+  const futureIssued = savedReport(now, { source: 'nws-hourly',
+    issuedAt: now / 1000 + 1, validUntil: (now + 15 * minute) / 1000 });
+  assert.equal(load({ cache: futureIssued }).weather.readLastKnown(), null,
+    'even a normally tolerated one-second future issuance is not yet a historical report');
+});
+
+test('malformed storage and embedded data are isolated so the other valid record remains usable', () => {
+  const initial = savedReport(now - 2 * hour, {}, true);
+  const cache = savedReport(now - hour, { weather_code: 61 });
+  assert.equal(load({ initial, cache: '{bad json' }).weather.readLastKnown().current.time, initial.current.time);
+  assert.equal(load({ initial: '{bad json', cache }).weather.readLastKnown().current.time, cache.current.time);
 });

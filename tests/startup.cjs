@@ -278,7 +278,7 @@ const cached = (changes, at = START) => ({ current: { time: Math.floor(at / 1000
   await test('early network rejection is handled before controller starts and retains retry timing', async () => {
     const before = unhandled.length, x = setup({ boot: 'weather-only' }); await x.reject(0); await x.tick(2000);
     assert.equal(unhandled.length, before); x.runSky(); await flush();
-    assert.equal(x.requests.length, 1); assert.equal(x.summary.textContent, 'San Francisco skies');
+    assert.equal(x.requests.length, 1); assert.equal(x.summary.textContent, 'San Francisco');
     assert.equal(x.fallbackRequests.length, 1);
     assert.deepEqual(x.hydrated(), ['overcast']);
     assert.deepEqual(x.playing(), ['overcast']);
@@ -291,7 +291,7 @@ const cached = (changes, at = START) => ({ current: { time: Math.floor(at / 1000
     x.runSky(); await flush(); assert.equal(x.requests.length, 1);
     assert.equal(x.fallbackRequests.length, 1);
     assert.deepEqual(x.loaded(), []); assert.equal(x.posters.overcast.src, assets.overcast.full);
-    assert.equal(x.summary.textContent, 'San Francisco skies');
+    assert.equal(x.summary.textContent, 'San Francisco');
   });
   await test('plain weather module use without startup attribute does not fetch until controller asks', async () => {
     const x = setup({ startup: false, boot: 'weather-only' }); assert.equal(x.requests.length, 0);
@@ -422,6 +422,32 @@ const cached = (changes, at = START) => ({ current: { time: Math.floor(at / 1000
     assert.deepEqual(x.loaded(), ['overcast']);
     assert.deepEqual(x.playing(), ['overcast']);
   });
+  await test('a reload retains a previously valid report during an outage and replaces it after recovery', async () => {
+    const cache = cached({ weather_code: 45 }, START - 2 * 3600000);
+    const x = setup({ cache }); await flush();
+    assert.deepEqual(x.playing(), ['fog']);
+    assert.equal(x.summary.textContent, 'Currently 60°F and foggy in San Francisco');
+    await x.reject(0);
+    assert.deepEqual(x.playing(), ['fog']);
+    assert.equal(x.summary.textContent, 'Currently 60°F and foggy in San Francisco');
+    assert.equal(x.writes.length, 0, 'a failed fetch does not refresh the cache timestamp');
+    await x.tick(60000); await x.resolve(1, { weather_code: 61 });
+    assert.deepEqual(x.playing(), ['rain']);
+    assert.equal(x.summary.textContent, 'Currently 60°F and raining in San Francisco');
+    assert.equal(JSON.parse(x.writes.at(-1).value).fetchedAt, START + 60000);
+  });
+  await test('a cold visitor retains an expired but previously valid published report', async () => {
+    const previous = START - 12 * 3600000;
+    const initial = { ...cached({ weather_code: 45, is_day: 0 }, previous), version: 1,
+      scene: 'night-fog', validUntil: previous + 1800000 };
+    const x = setup({ boot: 'snapshot', initial }); await flush();
+    assert.equal(x.root.dataset.scene, 'fog', 'retained conditions use the actual day/night clock');
+    assert.deepEqual(x.playing(), ['fog']);
+    assert.equal(x.summary.textContent, 'Currently 60°F and foggy in San Francisco');
+    await x.reject(0);
+    assert.deepEqual(x.playing(), ['fog']);
+    assert.equal(x.writes.length, 0);
+  });
   await test('five-minute refresh starts from successful completion and never overlaps pending requests', async () => {
     const x = setup(); await x.tick(1500); await x.resolve(0);
     await x.tick(299999); assert.equal(x.requests.length, 1); await x.tick(1); assert.equal(x.requests.length, 2);
@@ -430,21 +456,24 @@ const cached = (changes, at = START) => ({ current: { time: Math.floor(at / 1000
   });
   await test('refresh failure keeps prior scene and cached text then retries in one minute', async () => {
     const x = setup(); await x.resolve(0, { weather_code: 45 }); await x.tick(300000); await x.reject(1);
-    assert.equal(x.root.dataset.scene, 'fog'); assert.match(x.elements['#weather-freshness'].textContent, /^Last known /);
+    assert.equal(x.root.dataset.scene, 'fog'); assert.match(x.elements['#weather-freshness'].textContent, /^As of /);
     await x.tick(59999); assert.equal(x.requests.length, 2); await x.tick(1); assert.equal(x.requests.length, 3);
     await x.resolve(2, { weather_code: 51 }); assert.equal(x.root.dataset.scene, 'rain');
   });
-  await test('an outage keeps a bounded last-known visual without labeling it current', async () => {
+  await test('an outage retains the successful report indefinitely without retimestamping it', async () => {
     const x = setup(); await x.resolve(0, { weather_code: 61 });
     assert.deepEqual(x.playing(), ['rain']);
     await x.tick(1800000);
     assert.deepEqual(x.playing(), ['rain']);
-    assert.doesNotMatch(x.summary.textContent, /^Currently/);
-    assert.match(x.summary.textContent, /^Last known:/);
-    await x.tick(1800000);
-    assert.equal(x.root.dataset.scene, 'overcast');
-    assert.deepEqual(x.playing(), ['overcast']);
-    assert.equal(x.summary.textContent, 'San Francisco skies');
+    assert.equal(x.summary.textContent, 'Currently 60°F and raining in San Francisco');
+    await x.tick(3 * 3600000);
+    assert.equal(x.root.dataset.scene, 'rain');
+    assert.deepEqual(x.playing(), ['rain']);
+    assert.equal(x.summary.textContent, 'Currently 60°F and raining in San Francisco');
+    const retained = JSON.parse(x.writes.at(-1).value);
+    assert.equal(retained.current.time, START / 1000);
+    assert.equal(retained.fetchedAt, START);
+    assert.ok(x.requests.length > 3, 'outages keep retrying instead of treating retained data as fresh');
     await x.refresh({ weather_code: 0, cloud_cover: 12, direct_normal_irradiance_instant: 610 });
     assert.equal(x.root.dataset.scene, 'sunny');
     assert.deepEqual(x.playing(), ['sunny']);
@@ -455,7 +484,7 @@ const cached = (changes, at = START) => ({ current: { time: Math.floor(at / 1000
       if (kind === 'http') await x.response(0, {}, false);
       else if (kind === 'provider') await x.response(0, { error: true });
       else await x.resolve(0, kind === 'stale' ? { time: START / 1000 - 7201 } : { temperature_2m: '60' });
-      assert.equal(x.summary.textContent, 'San Francisco skies'); assert.deepEqual(x.hydrated(), ['overcast']);
+      assert.equal(x.summary.textContent, 'San Francisco'); assert.deepEqual(x.hydrated(), ['overcast']);
       assert.deepEqual(x.playing(), ['overcast'], 'neutral ambience has no current-weather claim');
     }
   });
@@ -559,8 +588,8 @@ const cached = (changes, at = START) => ({ current: { time: Math.floor(at / 1000
     assert.equal(x.root.dataset.scene, 'overcast');
     assert.deepEqual(x.loaded(), ['overcast']); assert.deepEqual(x.playing(), ['overcast']);
     assert.deepEqual(x.hydrated(), ['overcast', 'overcast-night']);
-    assert.match(x.summary.textContent, /San Francisco skies/);
-    assert.match(x.status.textContent, /Ambient sky/);
+    assert.match(x.summary.textContent, /San Francisco/);
+    assert.match(x.status.textContent, /Overcast sky selected/);
     await x.refresh({ weather_code: 61 });
     assert.equal(x.root.dataset.scene, 'rain'); assert.deepEqual(x.playing(), ['rain']);
   });
@@ -635,7 +664,7 @@ const cached = (changes, at = START) => ({ current: { time: Math.floor(at / 1000
     assert.equal(x.requests.length, 1, 'solar correction is independent of provider throttling');
     assert.deepEqual(x.playing(), ['fog']);
   });
-  await test('a sunset transition cannot extend an aging cached reading through an API outage', async () => {
+  await test('retained clear weather still follows sunset while refresh freshness expires', async () => {
     const start = solarClock.solarPhase(START).sunsetStart - 1000;
     const observation = Math.floor((start - 29 * 60000) / 1000);
     const cache = cached({ time: observation, weather_code: 0, cloud_cover: 0 }, start);
@@ -646,8 +675,8 @@ const cached = (changes, at = START) => ({ current: { time: Math.floor(at / 1000
     assert.deepEqual(x.playing(), ['sunset']);
     await x.tick(observation * 1000 + 30 * 60000 - x.now + 1);
     assert.deepEqual(x.playing(), ['sunset'], 'only decorative playback continues after weather expiry');
-    assert.doesNotMatch(x.summary.textContent, /^Currently /);
-    assert.equal(x.root.dataset.scene, 'sunset', 'the recent sky remains an explicitly last-known visual');
+    assert.match(x.summary.textContent, /^Currently /);
+    assert.equal(x.root.dataset.scene, 'sunset', 'retained weather still follows the actual solar clock');
   });
   await test('first live scene has no startup fade but later changes retain transitions', async () => {
     const x = setup(); await x.resolve(0, { weather_code: 61 });
@@ -678,7 +707,7 @@ const cached = (changes, at = START) => ({ current: { time: Math.floor(at / 1000
     assert.deepEqual(x.playing(), ['overcast']);
     assert.equal(x.summary.textContent, 'Forecast: 60°F and rain likely in San Francisco');
     await x.tick(900000);
-    assert.doesNotMatch(x.summary.textContent, /^(Currently|Forecast:)/);
+    assert.match(x.summary.textContent, /^Forecast:/);
     assert.deepEqual(x.playing(), ['overcast']);
   });
   await test('total outage ambience follows sunrise and respects reduced motion and portrait media', async () => {
@@ -686,7 +715,7 @@ const cached = (changes, at = START) => ({ current: { time: Math.floor(at / 1000
     for (const reduced of [false, true]) {
       const x = setup({ start, reduced, portrait: true }); await x.reject(0);
       assert.equal(x.root.dataset.scene, 'overcast-night');
-      assert.equal(x.summary.textContent, 'San Francisco skies');
+      assert.equal(x.summary.textContent, 'San Francisco');
       assert.deepEqual(x.playing(), reduced ? [] : ['overcast-night']);
       await x.tick(1100);
       assert.equal(x.root.dataset.scene, 'overcast');
@@ -734,7 +763,7 @@ const cached = (changes, at = START) => ({ current: { time: Math.floor(at / 1000
     assert.match(x.summary.textContent, /clear in San Francisco$/);
     assertRecordingUntouched(x);
     await x.tick(observation * 1000 + 30 * 60000 - x.now + 1);
-    assert.doesNotMatch(x.summary.textContent, /^Currently /);
+    assert.match(x.summary.textContent, /^Currently /);
     assertRecordingUntouched(x);
     x.visible(false); x.reduce(true); x.visible(true); await flush();
     x.viewport.emit('change', { matches: false });
@@ -744,7 +773,7 @@ const cached = (changes, at = START) => ({ current: { time: Math.floor(at / 1000
   });
   await test('a recording remains independent through cold weather failure and recovery', async () => {
     const x = setup({ recording: true }); await x.reject(0);
-    assert.match(x.summary.textContent, /San Francisco skies/); assertRecordingUntouched(x);
+    assert.match(x.summary.textContent, /San Francisco/); assertRecordingUntouched(x);
     await x.tick(60000); await x.resolve(1, { weather_code: 61 });
     assert.match(x.summary.textContent, /raining in San Francisco$/); assertRecordingUntouched(x);
   });
@@ -792,7 +821,7 @@ const cached = (changes, at = START) => ({ current: { time: Math.floor(at / 1000
   await test('returning from lake with recently expired weather resumes its last-known sky while refreshing', async () => {
     const x = setup(); await x.resolve(0, { weather_code: 61 });
     x.background('lake'); x.visible(false); await x.tick(1800001);
-    assert.doesNotMatch(x.summary.textContent, /^Currently /);
+    assert.match(x.summary.textContent, /^Currently /);
     x.visible(true); await flush();
     const requestCount = x.requests.length;
     assert.equal(requestCount, 2, 'foreground checks expired weather');
@@ -800,7 +829,7 @@ const cached = (changes, at = START) => ({ current: { time: Math.floor(at / 1000
     assert.equal(x.root.dataset.scene, 'rain', 'recent weather remains a last-known visual');
     assert.deepEqual(x.playing(), ['rain']); assert.equal(x.recordingVideo.paused, true);
     assert.equal(x.requests.length, requestCount, 'Cloud reuses the pending refresh');
-    assert.doesNotMatch(x.summary.textContent, /^Currently /);
+    assert.match(x.summary.textContent, /^Currently /);
     await x.resolve(requestCount - 1, { weather_code: 0, cloud_cover: 0 });
     assert.equal(x.root.dataset.scene, 'sunny'); assert.deepEqual(x.playing(), ['sunny']);
     assert.match(x.summary.textContent, /sunny in San Francisco$/);

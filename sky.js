@@ -26,11 +26,6 @@
   let solarTimer;
   let weatherFailed = false;
   let hasWeatherScene = false;
-  // Briefly retain a recent sky during an outage, without calling it current.
-  // Older readings give way to neutral, clock-correct day/night ambience.
-  const maxVisualAge = 60 * 60 * 1000;
-  const hasRecentVisual = () => current && current.time * 1000 <= Date.now() + 30000
-    && Date.now() - current.time * 1000 < maxVisualAge;
   const initialWeather = weather.readInitial();
   if (initialWeather) {
     current = initialWeather.current;
@@ -40,6 +35,13 @@
   if (cachedWeather) {
     current = cachedWeather.current;
     fetchedAt = cachedWeather.fetchedAt;
+  }
+  // Keep the last successful report during outages, including after a reload.
+  // Its original timestamps remain intact so it never suppresses fresh retries.
+  const retainedWeather = !current && weather.readLastKnown();
+  if (retainedWeather) {
+    current = retainedWeather.current;
+    fetchedAt = retainedWeather.fetchedAt;
   }
   const scenes = {
     cloudy: { title: 'Cloudy', src: './assets/clouds.mp4?v=weather-scenes-80', webmSrc: './assets/clouds.webm?v=weather-scenes-46', rate: 0.5, description: 'White clouds billowing gently across a blue sky' },
@@ -151,36 +153,27 @@
 
   function showWeather() {
     weatherSummary.dataset.forecast = String(current?.source === 'nws-hourly');
-    if (current && weather.isFresh(current)) {
+    if (current) {
       weatherSummary.textContent = weather.summarize(current);
       const temperature = Number.isFinite(current.temperature_2m) ? `${Math.round(current.temperature_2m)}°F · ` : '';
       condition.textContent = `${temperature}${weather.describe(current)}`;
-      freshness.textContent = `${current.source === 'nws-hourly' ? 'Forecast for' : weatherFailed ? 'Last known' : 'As of'} ${sfTime.format(current.time * 1000)} PT`;
-    } else if (hasRecentVisual()) {
-      const time = sfTime.format(current.time * 1000);
-      weatherSummary.textContent = `Last known: ${weather.describe(current).toLowerCase()} · ${time} PT`;
-      condition.textContent = `Last known: ${weather.describe(current)}`;
-      freshness.textContent = `Last updated ${time} PT; refreshing`;
+      freshness.textContent = `${current.source === 'nws-hourly' ? 'Forecast for' : 'As of'} ${sfTime.format(current.time * 1000)} PT`;
     } else {
-      weatherSummary.textContent = weatherFailed ? 'San Francisco skies' : 'Checking weather in San Francisco…';
-      condition.textContent = weatherFailed ? 'San Francisco skies' : 'Checking weather…';
-      freshness.textContent = 'Updating live weather';
+      weatherSummary.textContent = weatherFailed ? 'San Francisco' : 'Checking weather in San Francisco…';
+      condition.textContent = weatherFailed ? 'San Francisco' : 'Checking weather…';
+      freshness.textContent = '';
     }
   }
 
   function useFallbackSky({ instant = false } = {}) {
     clearTimeout(expiryTimer);
-    const recent = hasRecentVisual();
-    const key = recent ? weather.pickScene(current)
+    const key = current ? weather.pickScene(current)
       : weather.solarPhase().isDay ? 'overcast' : 'overcast-night';
     hasWeatherScene = true;
     if (weatherActive()) {
       selectScene(key, { instant });
-      status.textContent = recent ? 'Last known sky. Updating live weather.' : 'Ambient sky. Updating live weather.';
+      status.textContent = `${scenes[key].title} sky selected.`;
     }
-    if (recent) expiryTimer = setTimeout(() => {
-      useFallbackSky(); showWeather();
-    }, Math.max(1, current.time * 1000 + maxVisualAge - Date.now()));
   }
 
   function useCurrentWeather({ instant = false } = {}) {
@@ -391,10 +384,13 @@
   });
   clearPreviewURL();
   // The published still is already visible before this controller loads.
-  // Only fresh weather starts playback; live data replaces an expired snapshot.
+  // A retained report paints immediately while fresh data is requested.
   if (!useCurrentWeather({ instant: true }) && weatherActive()) {
-    sky.setAttribute('aria-label', 'Sky background while checking current weather');
-    status.textContent = 'Checking current weather.';
+    if (current) useFallbackSky({ instant: true });
+    else {
+      sky.setAttribute('aria-label', 'Sky background while checking current weather');
+      status.textContent = 'Checking current weather.';
+    }
   }
   // A parser-started video can fail before this deferred controller attaches.
   // Process its recorded error once all scene elements and sources are ready.

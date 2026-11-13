@@ -202,6 +202,40 @@
     } catch { return null; }
   }
 
+  function readLastKnown() {
+    const now = Date.now();
+    if (!Number.isFinite(now)) return null;
+    const candidates = [];
+    function retain(value, initial) {
+      if (!value || value.weatherPolicy !== policyId
+        || !Number.isFinite(value.fetchedAt) || value.fetchedAt <= 0 || value.fetchedAt > now) return;
+      const current = normalize(value.current);
+      // A retained report must have been valid when it was originally fetched.
+      // Its age is deliberately unrestricted now, but never rewritten as fresh.
+      if (current.time * 1000 > now || (current.issuedAt !== undefined && current.issuedAt * 1000 > now)
+        || !isFresh(current, value.fetchedAt)) return;
+      if (initial && (value.version !== 1
+        || !Number.isFinite(value.validUntil) || value.validUntil <= value.fetchedAt
+        || value.validUntil > value.fetchedAt + maxWeatherAge
+        || value.validUntil > expiresAt(current)
+        || value.scene !== select(current, value.fetchedAt))) return;
+      candidates.push({ current, fetchedAt: value.fetchedAt });
+    }
+    try {
+      const node = page?.querySelector('#initial-weather');
+      if (node) retain(JSON.parse(node.textContent), true);
+    } catch { /* A malformed embedded report must not hide a usable cache. */ }
+    try {
+      retain(JSON.parse(localStorage.getItem(`sf-sky-weather-${policyId}`)), false);
+    } catch { /* Storage is optional; a published report can stand on its own. */ }
+    const providerTime = ({ current }) => Math.max(current.time, current.issuedAt || 0);
+    candidates.sort((a, b) => providerTime(b) - providerTime(a) || b.fetchedAt - a.fetchedAt);
+    const latest = candidates[0];
+    // Keep the reported weather while allowing the real SF solar clock to
+    // choose its day/night counterpart during a prolonged service outage.
+    return latest ? { ...latest, scene: select(latest.current, now) } : null;
+  }
+
   function select(current, now = Date.now()) {
     const c = normalize(current);
     const solar = solarPhase(now);
@@ -385,7 +419,7 @@
   }
 
   host.SFWeather = Object.freeze({
-    endpoint, fallbackEndpoint, policyId, maxWeatherAge, refreshMs, fetchCurrent, expiresAt, isFresh, summarize, normalize, readInitial, readCache, solarPhase, nextSolarBoundary,
+    endpoint, fallbackEndpoint, policyId, maxWeatherAge, refreshMs, fetchCurrent, expiresAt, isFresh, summarize, normalize, readInitial, readCache, readLastKnown, solarPhase, nextSolarBoundary,
     takeStartupRequest() {
       const request = startupRequest;
       startupRequest = null;
