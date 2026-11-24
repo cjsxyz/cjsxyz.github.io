@@ -112,7 +112,7 @@ async function test(name, body) {
     assert.deepEqual([...markup.matchAll(/class="dock-item"[^>]*data-view="([^"]+)"/g)].map(match => match[1]), ['cloud', 'user', 'mail']);
     const bioCopy = /id="bio-summary"[^>]*>([\s\S]*?)<\/div>/.exec(markup)[1];
     const paragraphs = [...bioCopy.matchAll(/<p>([\s\S]*?)<\/p>/g)].map(match => match[1].replace(/<[^>]+>/g, ''));
-    assert.deepEqual(paragraphs, ['Conversations and vibes at Paradigm.', 'Building a homestead in the Napa mountains.']);
+    assert.deepEqual(paragraphs, ['Building a homestead in the Napa mountains.']);
     assert.match(bioCopy, /Conversations and vibes at <strong><a href="https:\/\/www\.paradigm\.xyz\/"[^>]*>Paradigm<\/a><\/strong>\./);
     assert.match(bioCopy, /<button id="homestead-link" class="bio-action" type="button" aria-label="Play the homestead lake video">homestead<\/button>/);
   });
@@ -170,7 +170,7 @@ async function test(name, body) {
   });
   await test('trusted click invokes exact clipboard write synchronously and success alone opens Copied!', async () => {
     const x = setup(); x.click('mail');
-    assert.equal(x.requests.length, 1); assert.equal(x.requests[0].value, 'chris@paradigm.xyz');
+    assert.equal(x.requests.length, 1); assert.equal(x.requests[0].value, 'chrisshu@me.com');
     assert.equal(x.requests[0].inClick, true); assert.equal(x.visibleCopy(), false);
     assert.deepEqual(x.unlocks, [{ inClick: true }], 'audio unlock stays inside the trusted gesture');
     assert.deepEqual(x.sounds, [], 'no selection or success cue before clipboard resolves');
