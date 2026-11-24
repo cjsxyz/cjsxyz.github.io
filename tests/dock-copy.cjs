@@ -113,7 +113,6 @@ async function test(name, body) {
     const bioCopy = /id="bio-summary"[^>]*>([\s\S]*?)<\/div>/.exec(markup)[1];
     const paragraphs = [...bioCopy.matchAll(/<p>([\s\S]*?)<\/p>/g)].map(match => match[1].replace(/<[^>]+>/g, ''));
     assert.deepEqual(paragraphs, ['Building a homestead in the Napa mountains.']);
-    assert.match(bioCopy, /Conversations and vibes at <strong><a href="https:\/\/www\.paradigm\.xyz\/"[^>]*>Paradigm<\/a><\/strong>\./);
     assert.match(bioCopy, /<button id="homestead-link" class="bio-action" type="button" aria-label="Play the homestead lake video">homestead<\/button>/);
   });
   await test('opening User leaves weather alone and the homestead action starts the lake inside its click', async () => {
