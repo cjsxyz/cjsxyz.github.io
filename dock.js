@@ -70,7 +70,7 @@
     let copied = false;
     try {
       // Invoke directly in the click gesture, including on mobile Safari.
-      await navigator.clipboard.writeText('chris@paradigm.xyz');
+      await navigator.clipboard.writeText('chrisshu@me.com');
       copied = true;
     } catch { /* Never show success when clipboard access was refused. */ }
     if (request !== copyRequest) return;
